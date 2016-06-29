@@ -14,11 +14,13 @@ import (
 	"github.com/brentp/xopen"
 )
 
+const VERSION = "0.1.0"
+
 type Args struct {
 	Procs   int    `arg:"-p,help:number of processes to use"`
-	Nlines  int    `arg:"-n,help:number of lines to consume for each command"`
+	Nlines  int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
 	Command string `arg:"positional,required,help:command to execute"`
-	Sep     string `arg:"-s,help:split line(s) with this to fill multiple template spots default is not to split NOT IMPLEMENTED."`
+	Sep     string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Shell   string `arg:"help:shell to use"`
 	Verbose bool   `arg:"-v,help:print commands to stderr before they are executed."`
 }
@@ -31,7 +33,10 @@ func main() {
 	args.Sep = ""
 	args.Shell = "bash"
 	args.Verbose = false
-	arg.MustParse(&args)
+	p := arg.MustParse(&args)
+	if args.Sep != "" && args.Nlines > 1 {
+		p.Fail("must specify either sep (-s) or n-lines (-n), not both")
+	}
 	if !xopen.IsStdin() {
 		fmt.Fprintln(os.Stderr, "ERROR: expecting input on STDIN")
 		os.Exit(255)
@@ -48,6 +53,11 @@ func check(e error) {
 
 func genLines(n int, sep string) chan []interface{} {
 	ch := make(chan []interface{})
+	var resep *regexp.Regexp
+	if sep != "" {
+		resep = regexp.MustCompile(sep)
+	}
+
 	go func() {
 		rdr, err := xopen.Ropen("-")
 		check(err)
@@ -57,8 +67,18 @@ func genLines(n int, sep string) chan []interface{} {
 		for {
 			line, err := rdr.ReadString('\n')
 			if err == nil || (err == io.EOF && len(line) > 0) {
-				lines[k] = re.ReplaceAllString(line, "")
-				k += 1
+				line = re.ReplaceAllString(line, "")
+				if resep != nil {
+					toks := resep.Split(line, -1)
+					itoks := make([]interface{}, len(toks))
+					for i, t := range toks {
+						itoks[i] = t
+					}
+					ch <- itoks
+				} else {
+					lines[k] = line
+					k += 1
+				}
 			} else {
 				if err == io.EOF {
 					break
