@@ -11,25 +11,14 @@ gargs
 
 Work In Progress:
 
-gargs is like xargs but it addresses the following limitations in xargs:
+**gargs** is like **xargs** but it addresses the following limitations in xargs:
 
 + it keeps the output serialized even when using multiple threads
 + easy to specify multiple arguments with number blocks ({0}, {1}, ...) and {} indicates the entire line.
++ easy to use multiple lines to fill command-template.
++ it defaults to exiting all commands when an error in one of them occurs.
 
-This will keep the output in order (via -o) and send 3 arguments to each process
-by pulling in lines of 3.
-It is using 4 proceses to parallelize.
-
-```
-$ seq 12 -1 1 | gargs -o -p 4 -n 3 "sleep {0}; echo {1} {2}"
-11 10
-8 7
-5 4
-2 1
-```
-
-Note that for each line, we slept 12, 9, 6, 3 seconds respectively but the output order was maintained. We can make
-more even use of cores by not enforcing the output order (remove -o)
+For example, can consume lines of 3 (-n2) and use each line as an `{\d}` command-template filler:
 
 ```
 $ seq 12 -1 1 | gargs -p 4 -n 3 "sleep {0}; echo {1} {2}"
@@ -39,14 +28,10 @@ $ seq 12 -1 1 | gargs -p 4 -n 3 "sleep {0}; echo {1} {2}"
 11 10
 ```
 
-
-The -n 3 indicates that we'll use 3 lines to fill the args. redundant with seeing the "{}"'s. In the future, it may be possible to use numbered arguments:
-
 Install
 =======
 
 Download the appropriate binary for your system from [releases](https://github.com/brentp/gargs/releases) into your $PATH.
-
 
 Example
 =======
@@ -57,7 +42,7 @@ chr2 22 33
 chr3 22	33
 chr4	22	33
 ```
-That has a mixture of tabs and spaces. We can convert to chrom:start-end format with:
+That has a mixture of tabs and spaces. We can convert each line to chrom:start-end format with:
 
 ```
 $ cat t.txt | gargs --sep "\s+" -p 2 "echo '{0}:{1}-{2}' full-line: \'{}\'"
@@ -100,3 +85,4 @@ TODO
 ====
 
 + combinations of `-n` and `--sep`.
++ final exit code is the largest of any seen exit code even with -c
