@@ -32,6 +32,12 @@ Note that for each line, we slept 12, 9, 6, 3 seconds respectively but the outpu
 
 For now, the -n 3 is redundant with seeing the "{}"'s. In the future, it may be possible to use numbered arguments:
 
+Install
+=======
+
+Download the appropriate binary for your system from [releases](https://github.com/brentp/gargs/releases) into your $PATH.
+
+
 Example
 =======
 Let's say we have a file `t.txt` like:
