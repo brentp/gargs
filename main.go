@@ -18,7 +18,7 @@ import (
 	"github.com/brentp/xopen"
 )
 
-const VERSION = "0.2.0"
+const VERSION = "0.3.0"
 
 type Args struct {
 	Procs           int    `arg:"-p,help:number of processes to use"`
@@ -27,8 +27,9 @@ type Args struct {
 	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Shell           string `arg:"help:shell to use"`
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
-	ContinueOnError bool   `arg:"-c,help:report errors but don't stop the entire execution (which is the default)."`
+	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
 	Ordered         bool   `arg:"-o,help:keep output in order of input; default is to output in order of return which greatly improves parallelization."`
+	DryRun          bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
 }
 
 // hold the arguments for each call.
@@ -47,6 +48,7 @@ func main() {
 	args.Verbose = false
 	args.ContinueOnError = false
 	args.Ordered = false
+	args.DryRun = false
 	p := arg.MustParse(&args)
 	if args.Sep != "" && args.Nlines > 1 {
 		p.Fail("must specify either sep (-s) or n-lines (-n), not both")
@@ -189,6 +191,10 @@ func process(ch chan []byte, cmdStr string, args Args, xarg *xargs) {
 
 	if args.Verbose {
 		fmt.Fprintf(os.Stderr, "command: %s\n", cmdStr)
+	}
+	if args.DryRun {
+		fmt.Fprintf(os.Stdout, "%s\n", cmdStr)
+		return
 	}
 
 	cmd := exec.Command(args.Shell, "-c", cmdStr)
