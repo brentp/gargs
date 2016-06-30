@@ -210,8 +210,7 @@ func process(ch chan []byte, cmdStr string, args Args, xarg *xargs) {
 		} else {
 			argString = strings.Join(xarg.Lines, "|")
 		}
-		log.Printf("ERROR in command: %s\twith args: %s", cmdStr, argString)
-		log.Println(err)
+		fmt.Fprintf(os.Stderr, "[===\nERROR in command: %s using args: %s\n%s\n===]\n", cmdStr, argString, err)
 		if ex, ok := err.(*exec.ExitError); ok {
 			if st, ok := ex.Sys().(syscall.WaitStatus); ok {
 				if !args.ContinueOnError {
