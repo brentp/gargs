@@ -26,3 +26,10 @@ assert_in_stdout "chr3:22-33 full-line: 'chr3 22 33'"
 assert_in_stdout "chr4:22-33 full-line: 'chr4 22 33'"
 
 
+fn_check_exit_err(){
+	seq 0 5  | ./gargs_race -c "python -c 'print 1.0/{}'"
+}
+run check_exit_err fn_check_exit_err
+assert_exit_code 1
+assert_in_stdout "0.2"
+assert_in_stderr "ZeroDivisionError"

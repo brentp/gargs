@@ -87,5 +87,6 @@ options:
 TODO
 ====
 
-+ combinations of `-n` and `--sep`.
-+ final exit code is the largest of any seen exit code even with -c
++ [X] final exit code is the largest of any seen exit code even with -c
++ [X] dry-run
++ [ ]combinations of `-n` and `--sep`.

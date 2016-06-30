@@ -18,7 +18,9 @@ import (
 	"github.com/brentp/xopen"
 )
 
-const VERSION = "0.3.0"
+const VERSION = "0.3.1-dev"
+
+var EXIT_CODE = 0
 
 type Args struct {
 	Procs           int    `arg:"-p,help:number of processes to use"`
@@ -63,6 +65,7 @@ func main() {
 	} else {
 		runUnOrdered(args)
 	}
+	os.Exit(EXIT_CODE)
 }
 
 func check(e error) {
@@ -209,13 +212,20 @@ func process(ch chan []byte, cmdStr string, args Args, xarg *xargs) {
 		}
 		log.Printf("ERROR in command: %s\twith args: %s", cmdStr, argString)
 		log.Println(err)
-		if !args.ContinueOnError {
-			if ex, ok := err.(*exec.ExitError); ok {
-				if st, ok := ex.Sys().(syscall.WaitStatus); ok {
+		if ex, ok := err.(*exec.ExitError); ok {
+			if st, ok := ex.Sys().(syscall.WaitStatus); ok {
+				if !args.ContinueOnError {
 					os.Exit(st.ExitStatus())
+				} else if st.ExitStatus() > EXIT_CODE {
+					EXIT_CODE = st.ExitStatus()
 				}
 			}
-			os.Exit(1)
+		} else {
+			if !args.ContinueOnError {
+				os.Exit(1)
+			} else {
+				EXIT_CODE = 1
+			}
 		}
 	}
 	ch <- out
