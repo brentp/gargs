@@ -89,4 +89,9 @@ TODO
 
 + [X] final exit code is the largest of any seen exit code even with -c
 + [X] dry-run
-+ [ ]combinations of `-n` and `--sep`.
++ [ ] combinations of `-n` and `--sep`.
++ [ ] for example, we are sending regions to bcftools view or tabix. It's faster to send multiple
+      queries to each rather than starting a new process for each one.
+      if we do 'bcftools view {} {} {}' then we'll get an error at the last round if the input is
+      not divisible by 3. For this case, we should be able to just issue a warning.
+
