@@ -130,9 +130,7 @@ func runUnOrdered(args Args) {
 					if !ok {
 						return
 					}
-					ch := make(chan []byte, 1)
-					process(ch, cmd, args, x)
-					c <- <-ch
+					process(c, cmd, args, x)
 				}
 			}()
 
@@ -149,14 +147,17 @@ func runUnOrdered(args Args) {
 func runOrdered(args Args) {
 	ch := make(chan chan []byte, args.Procs)
 
-	chlines := genXargs(args.Nlines, args.Sep)
+	chXargs := genXargs(args.Nlines, args.Sep)
 	cmd := makeCommand(args.Command)
 
 	go func() {
-		for lines := range chlines {
+		for xa := range chXargs {
 			ich := make(chan []byte, 1)
 			ch <- ich
-			go process(ich, cmd, args, lines)
+			go func(ich chan []byte, x *xargs) {
+				process(ich, cmd, args, x)
+				close(ich)
+			}(ich, xa)
 		}
 		close(ch)
 	}()
@@ -212,5 +213,4 @@ func process(ch chan []byte, cmdStr string, args Args, xarg *xargs) {
 		}
 	}
 	ch <- out
-	close(ch)
 }
