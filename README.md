@@ -1,13 +1,15 @@
 <!--
 rm -rf binaries
 mkdir -p binaries/
-VERSION=0.2.0
+VERSION=0.3.0
 for os in darwin linux windows; do
 	GOOS=$os GOARCH=$arch go build -o binaries/gargs_${os} main.go
 done
 -->
 gargs
 =====
+
+[![Build Status](https://travis-ci.org/brentp/gargs.svg?branch=master)](https://travis-ci.org/brentp/gargs)
 
 Work In Progress:
 
