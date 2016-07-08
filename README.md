@@ -95,3 +95,5 @@ TODO
       if we do 'bcftools view {} {} {}' then we'll get an error at the last round if the input is
       not divisible by 3. For this case, we should be able to just issue a warning.
 
+	  Actually, can currently do: `seq 10 | ./gargs -n 3 "echo {0} {1} {2}"`
+

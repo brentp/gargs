@@ -18,8 +18,10 @@ import (
 	"github.com/brentp/xopen"
 )
 
+// VERSION is the current version
 const VERSION = "0.3.1-dev"
 
+// EXIT_CODE is the highest exit code seen in any command
 var EXIT_CODE = 0
 
 type Args struct {
@@ -97,7 +99,7 @@ func genXargs(n int, sep string) chan *xargs {
 					ch <- &xargs{Xs: toks, Lines: []string{line}}
 				} else {
 					lines[k] = line
-					k += 1
+					k++
 				}
 			} else {
 				if err == io.EOF {
