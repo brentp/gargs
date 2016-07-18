@@ -19,7 +19,7 @@ import (
 )
 
 // VERSION is the current version
-const VERSION = "0.3.1-dev"
+const VERSION = "0.3.1"
 
 // EXIT_CODE is the highest exit code seen in any command
 var EXIT_CODE = 0
@@ -29,7 +29,6 @@ type Args struct {
 	Nlines          int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
 	Command         string `arg:"positional,required,help:command to execute"`
 	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
-	Shell           string `arg:"help:shell to use"`
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
 	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
 	Ordered         bool   `arg:"-o,help:keep output in order of input; default is to output in order of return which greatly improves parallelization."`
@@ -48,7 +47,10 @@ func main() {
 	args.Procs = 1
 	args.Nlines = 1
 	args.Sep = ""
-	args.Shell = "bash"
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "bash"
+	}
 	args.Verbose = false
 	args.ContinueOnError = false
 	args.Ordered = false
@@ -63,9 +65,9 @@ func main() {
 	}
 	runtime.GOMAXPROCS(args.Procs)
 	if args.Ordered {
-		runOrdered(args)
+		runOrdered(args, shell)
 	} else {
-		runUnOrdered(args)
+		runUnOrdered(args, shell)
 	}
 	os.Exit(EXIT_CODE)
 }
@@ -121,7 +123,7 @@ func genXargs(n int, sep string) chan *xargs {
 	return ch
 }
 
-func runUnOrdered(args Args) {
+func runUnOrdered(args Args, shell string) {
 	c := make(chan []byte)
 	chXargs := genXargs(args.Nlines, args.Sep)
 	cmd := makeCommand(args.Command)
@@ -137,7 +139,7 @@ func runUnOrdered(args Args) {
 					if !ok {
 						return
 					}
-					process(c, cmd, args, x)
+					process(c, cmd, args, x, shell)
 				}
 			}()
 
@@ -151,7 +153,7 @@ func runUnOrdered(args Args) {
 	}
 }
 
-func runOrdered(args Args) {
+func runOrdered(args Args, shell string) {
 	ch := make(chan chan []byte, args.Procs)
 
 	chXargs := genXargs(args.Nlines, args.Sep)
@@ -162,7 +164,7 @@ func runOrdered(args Args) {
 			ich := make(chan []byte, 1)
 			ch <- ich
 			go func(ich chan []byte, x *xargs) {
-				process(ich, cmd, args, x)
+				process(ich, cmd, args, x, shell)
 				close(ich)
 			}(ich, xa)
 		}
@@ -184,7 +186,7 @@ func makeCommand(cmd string) string {
 	return v
 }
 
-func process(ch chan []byte, cmdStr string, args Args, xarg *xargs) {
+func process(ch chan []byte, cmdStr string, args Args, xarg *xargs, shell string) {
 
 	tmpl, err := template.New(cmdStr).Parse(cmdStr)
 	check(err)
@@ -202,7 +204,10 @@ func process(ch chan []byte, cmdStr string, args Args, xarg *xargs) {
 		return
 	}
 
-	cmd := exec.Command(args.Shell, "-c", cmdStr)
+	cmd := exec.Command(shell, "-c", cmdStr)
+	if strings.HasSuffix(shell, "perl") {
+		cmd = exec.Command(shell, "-e", cmdStr)
+	}
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {

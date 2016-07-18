@@ -3,8 +3,11 @@
 test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest/master/ssshtest
 
 . ssshtest
+set -e
 
 go build -o gargs_race -race -a
+
+set +e
 
 fn_check_basic() {
 	seq 12 -1 1 | ./gargs_race -p 5 -n 3 -d  -v 'sleep {0}; echo {1} {2}'
@@ -33,3 +36,21 @@ run check_exit_err fn_check_exit_err
 assert_exit_code 1
 assert_in_stdout "0.2"
 assert_in_stderr "ZeroDivisionError"
+
+
+fn_custom_shell(){
+	seq 0 5 | SHELL=python ./gargs_race -c "print '%.2f' % {}"
+}
+run check_custom_shell fn_custom_shell
+assert_exit_code 0
+assert_in_stdout "1.00"
+assert_equal "6" $(wc -l $STDOUT_FILE)
+
+fn_perl() {
+	seq 1 5 | SHELL=perl ./gargs_race 'print {} . "\n"'
+}
+run check_perl fn_perl
+assert_exit_code 0
+assert_in_stdout "1"
+assert_equal "5" $(wc -l $STDOUT_FILE)
+

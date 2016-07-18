@@ -64,7 +64,7 @@ Usage
 =====
 
 ```
-usage: gargs [--procs PROCS] [--nlines NLINES] [--sep SEP] [--shell SHELL] [--verbose] [--continue-on-error] [--ordered] [--dry-run] COMMAND
+usage: gargs_race [--procs PROCS] [--nlines NLINES] [--sep SEP] [--verbose] [--continue-on-error] [--ordered] [--dry-run] COMMAND
 
 positional arguments:
   command                command to execute
@@ -75,12 +75,11 @@ options:
   --nlines NLINES, -n NLINES
                          number of lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
   --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
-  --shell SHELL          shell to use [default: bash]
   --verbose, -v          print commands to stderr before they are executed.
   --continue-on-error, -c
                          report errors but don't stop the entire execution (which is the default).
   --ordered, -o          keep output in order of input; default is to output in order of return which greatly improves parallelization.
-  --dry-run, -d          print (but do not run) the commands (for debugging)
+  --dry-run, -d          print (but do not run) the commands
   --help, -h             display this help and exit
 ```
 
