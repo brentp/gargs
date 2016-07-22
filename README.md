@@ -30,6 +30,14 @@ $ seq 12 -1 1 | gargs -p 4 -n 3 "sleep {0}; echo {1} {2}"
 11 10
 ```
 
+
+
+Install
+=======
+
+Download the appropriate binary for your system from [releases](https://github.com/brentp/gargs/releases) into your $PATH.
+
+
 Limitations
 ===========
 
@@ -43,12 +51,6 @@ This can be mitigated by reading the output of each as a stream and sending
 to STDOUT in chunks of lines but this assumes all output is line-wise.
 
 We may also be able to mitigate by using io.PipeReader.
-
-
-Install
-=======
-
-Download the appropriate binary for your system from [releases](https://github.com/brentp/gargs/releases) into your $PATH.
 
 Example
 =======
