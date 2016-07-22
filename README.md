@@ -1,7 +1,7 @@
 <!--
 rm -rf binaries
 mkdir -p binaries/
-VERSION=0.3.0
+VERSION=0.3.1
 for os in darwin linux windows; do
 	GOOS=$os GOARCH=$arch go build -o binaries/gargs_${os} main.go
 done
@@ -29,6 +29,21 @@ $ seq 12 -1 1 | gargs -p 4 -n 3 "sleep {0}; echo {1} {2}"
 8 7
 11 10
 ```
+
+Limitations
+===========
+
+Potentially many processes are writing to the single STDOUT. Currently,
+this is handled by reading all output from each process into memory and then
+writing that to STDOUT as soon as the previous process has finished writing.
+This can lead to large memory use (even if there is no blocking or waiting)
+if the output from each command is large.
+
+This can be mitigated by reading the output of each as a stream and sending
+to STDOUT in chunks of lines but this assumes all output is line-wise.
+
+We may also be able to mitigate by using io.PipeReader.
+
 
 Install
 =======
