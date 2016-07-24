@@ -30,11 +30,10 @@ assert_in_stdout "chr4:22-33 full-line: 'chr4 22 33'"
 
 
 fn_check_exit_err(){
-	seq 0 5  | ./gargs_race -c "python -c 'print 1.0/{}'"
+	seq 0 5  | ./gargs_race -p 5 "python -c 'print 1.0/{}'"
 }
 run check_exit_err fn_check_exit_err
 assert_exit_code 1
-assert_in_stdout "0.2"
 assert_in_stderr "ZeroDivisionError"
 
 
@@ -46,11 +45,9 @@ assert_exit_code 0
 assert_in_stdout "1.00"
 assert_equal "6" $(wc -l $STDOUT_FILE)
 
-fn_perl() {
-	seq 1 5 | SHELL=perl ./gargs_race 'print {} . "\n"'
+go build -o gargs_fast -a
+fn_test_filehandles(){
+	seq 1 10000 | ./gargs_fast -p 5 "echo {}"
 }
-run check_perl fn_perl
+run check_filehandles fn_test_filehandles
 assert_exit_code 0
-assert_in_stdout "1"
-assert_equal "5" $(wc -l $STDOUT_FILE)
-

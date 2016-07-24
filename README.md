@@ -80,8 +80,10 @@ efficiency.
 Usage
 =====
 
+via `gargs -h`
+
 ```
-usage: gargs_race [--procs PROCS] [--nlines NLINES] [--sep SEP] [--verbose] [--continue-on-error] [--ordered] [--dry-run] COMMAND
+usage: main [--procs PROCS] [--nlines NLINES] [--sep SEP] [--verbose] [--continue-on-error] [--dry-run] COMMAND
 
 positional arguments:
   command                command to execute
@@ -95,10 +97,10 @@ options:
   --verbose, -v          print commands to stderr before they are executed.
   --continue-on-error, -c
                          report errors but don't stop the entire execution (which is the default).
-  --ordered, -o          keep output in order of input; default is to output in order of return which greatly improves parallelization.
   --dry-run, -d          print (but do not run) the commands
   --help, -h             display this help and exit
 ```
+
 
 TODO
 ====

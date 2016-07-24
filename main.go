@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -18,43 +20,35 @@ import (
 	"github.com/brentp/xopen"
 )
 
-// VERSION is the current version
-const VERSION = "0.3.1"
+// Version is the current version
+const Version = "0.3.2"
 
-// EXIT_CODE is the highest exit code seen in any command
-var EXIT_CODE = 0
+// ExitCode is the highest exit code seen in any command
+var ExitCode = 0
 
-type Args struct {
+// Params are the user-specified command-line arguments
+type Params struct {
 	Procs           int    `arg:"-p,help:number of processes to use"`
 	Nlines          int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
 	Command         string `arg:"positional,required,help:command to execute"`
 	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
 	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
-	Ordered         bool   `arg:"-o,help:keep output in order of input; default is to output in order of return which greatly improves parallelization."`
 	DryRun          bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
 }
 
-// hold the arguments for each call.
-type xargs struct {
+// hold the arguments for each call that fill the template.
+type tmplArgs struct {
 	Lines []string
 	Xs    []string
 }
 
 func main() {
-
-	args := Args{}
-	args.Procs = 1
-	args.Nlines = 1
-	args.Sep = ""
+	args := Params{Procs: 1, Nlines: 1}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "bash"
 	}
-	args.Verbose = false
-	args.ContinueOnError = false
-	args.Ordered = false
-	args.DryRun = false
 	p := arg.MustParse(&args)
 	if args.Sep != "" && args.Nlines > 1 {
 		p.Fail("must specify either sep (-s) or n-lines (-n), not both")
@@ -64,12 +58,8 @@ func main() {
 		os.Exit(255)
 	}
 	runtime.GOMAXPROCS(args.Procs)
-	if args.Ordered {
-		runOrdered(args, shell)
-	} else {
-		runUnOrdered(args, shell)
-	}
-	os.Exit(EXIT_CODE)
+	runUnOrdered(args, shell)
+	os.Exit(ExitCode)
 }
 
 func check(e error) {
@@ -78,8 +68,8 @@ func check(e error) {
 	}
 }
 
-func genXargs(n int, sep string) chan *xargs {
-	ch := make(chan *xargs)
+func genTmplArgs(n int, sep string) chan *tmplArgs {
+	ch := make(chan *tmplArgs)
 	var resep *regexp.Regexp
 	if sep != "" {
 		resep = regexp.MustCompile(sep)
@@ -98,7 +88,7 @@ func genXargs(n int, sep string) chan *xargs {
 				line = re.ReplaceAllString(line, "")
 				if resep != nil {
 					toks := resep.Split(line, -1)
-					ch <- &xargs{Xs: toks, Lines: []string{line}}
+					ch <- &tmplArgs{Xs: toks, Lines: []string{line}}
 				} else {
 					lines[k] = line
 					k++
@@ -111,73 +101,39 @@ func genXargs(n int, sep string) chan *xargs {
 			}
 			if k == n {
 				k = 0
-				ch <- &xargs{Lines: lines, Xs: lines}
+				ch <- &tmplArgs{Lines: lines, Xs: lines}
 				lines = make([]string, n)
 			}
 		}
 		if k > 0 {
-			ch <- &xargs{Lines: lines[:k], Xs: lines}
+			ch <- &tmplArgs{Lines: lines[:k], Xs: lines}
 		}
 		close(ch)
 	}()
 	return ch
 }
 
-func runUnOrdered(args Args, shell string) {
-	c := make(chan []byte)
-	chXargs := genXargs(args.Nlines, args.Sep)
+func runUnOrdered(args Params, shell string) {
+	chXargs := genTmplArgs(args.Nlines, args.Sep)
 	cmd := makeCommand(args.Command)
+	mu := &sync.Mutex{}
+	var wg sync.WaitGroup
+	wg.Add(args.Procs)
 
 	go func() {
-		var wg sync.WaitGroup
-		wg.Add(args.Procs)
 		for i := 0; i < args.Procs; i++ {
 			go func() {
 				defer wg.Done()
-				for {
-					x, ok := <-chXargs
-					if !ok {
-						return
-					}
-					process(c, cmd, args, x, shell)
+				for x := range chXargs {
+					process(mu, cmd, &args, x, shell)
 				}
 			}()
-
 		}
-		wg.Wait()
-		close(c)
 	}()
-
-	for o := range c {
-		os.Stdout.Write(o)
-	}
-}
-
-func runOrdered(args Args, shell string) {
-	ch := make(chan chan []byte, args.Procs)
-
-	chXargs := genXargs(args.Nlines, args.Sep)
-	cmd := makeCommand(args.Command)
-
-	go func() {
-		for xa := range chXargs {
-			ich := make(chan []byte, 1)
-			ch <- ich
-			go func(ich chan []byte, x *xargs) {
-				process(ich, cmd, args, x, shell)
-				close(ich)
-			}(ich, xa)
-		}
-		close(ch)
-	}()
-
-	for o := range ch {
-		os.Stdout.Write(<-o)
-	}
+	wg.Wait()
 }
 
 func makeCommand(cmd string) string {
-	//return strings.Replace(strings.Replace(cmd, "%", "%%", -1), "{}", "%s", -1)
 	v := strings.Replace(cmd, "{}", "{{index .Lines 0}}", -1)
 	re := regexp.MustCompile(`({\d+})`)
 	v = re.ReplaceAllStringFunc(v, func(match string) string {
@@ -186,13 +142,13 @@ func makeCommand(cmd string) string {
 	return v
 }
 
-func process(ch chan []byte, cmdStr string, args Args, xarg *xargs, shell string) {
+func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell string) {
 
 	tmpl, err := template.New(cmdStr).Parse(cmdStr)
 	check(err)
 
 	var buf bytes.Buffer
-	check(tmpl.Execute(&buf, xarg))
+	check(tmpl.Execute(&buf, tArgs))
 
 	cmdStr = buf.String()
 
@@ -200,39 +156,68 @@ func process(ch chan []byte, cmdStr string, args Args, xarg *xargs, shell string
 		fmt.Fprintf(os.Stderr, "command: %s\n", cmdStr)
 	}
 	if args.DryRun {
+		mu.Lock()
 		fmt.Fprintf(os.Stdout, "%s\n", cmdStr)
+		mu.Unlock()
 		return
 	}
 
 	cmd := exec.Command(shell, "-c", cmdStr)
-	if strings.HasSuffix(shell, "perl") {
-		cmd = exec.Command(shell, "-e", cmdStr)
-	}
 	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
+	pipe, err := cmd.StdoutPipe()
+	var bPipe *bufio.Reader
+	if err == nil {
+		bPipe = bufio.NewReader(pipe)
+		err = cmd.Start()
+	}
+
+	if err == nil {
+		res, pErr := bPipe.Peek(8388608)
+		if pErr == bufio.ErrBufferFull || pErr == io.EOF {
+			mu.Lock()
+			defer mu.Unlock()
+			// TODO: buffer Stdout
+			_, err = os.Stdout.Write(res)
+		} else {
+			tmp, xerr := ioutil.TempFile("", "gargs")
+			check(xerr)
+			defer os.Remove(tmp.Name())
+			bTmp := bufio.NewWriter(tmp)
+			_, err = io.Copy(bTmp, bPipe)
+			defer tmp.Close()
+			if err == nil {
+				if err == nil {
+					tmp.Seek(0, 0)
+					cTmp := bufio.NewReader(tmp)
+					mu.Lock()
+					defer mu.Unlock()
+					_, err = io.Copy(os.Stdout, cTmp)
+				}
+
+			}
+		}
+	}
+	if err == nil {
+		err = cmd.Wait()
+	} else {
+		cmd.Process.Kill()
+	}
+
 	if err != nil {
 		var argString string
-		if xarg.Xs != nil && len(xarg.Xs) > 0 {
-			argString = strings.Join(xarg.Xs, ",")
+		if tArgs.Xs != nil && len(tArgs.Xs) > 0 {
+			argString = strings.Join(tArgs.Xs, ",")
 		} else {
-			argString = strings.Join(xarg.Lines, "|")
+			argString = strings.Join(tArgs.Lines, "|")
 		}
 		fmt.Fprintf(os.Stderr, "[===\nERROR in command: %s using args: %s\n%s\n===]\n", cmdStr, argString, err)
-		if ex, ok := err.(*exec.ExitError); ok {
-			if st, ok := ex.Sys().(syscall.WaitStatus); ok {
-				if !args.ContinueOnError {
-					os.Exit(st.ExitStatus())
-				} else if st.ExitStatus() > EXIT_CODE {
-					EXIT_CODE = st.ExitStatus()
-				}
-			}
-		} else {
+		ex := err.(*exec.ExitError)
+		if st, ok := ex.Sys().(syscall.WaitStatus); ok {
 			if !args.ContinueOnError {
-				os.Exit(1)
-			} else {
-				EXIT_CODE = 1
+				os.Exit(st.ExitStatus())
+			} else if st.ExitStatus() > ExitCode {
+				ExitCode = st.ExitStatus()
 			}
 		}
 	}
-	ch <- out
 }
