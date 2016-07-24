@@ -59,6 +59,7 @@ func main() {
 	}
 	runtime.GOMAXPROCS(args.Procs)
 	runUnOrdered(args, shell)
+	defer os.Stdout.Close()
 	os.Exit(ExitCode)
 }
 
@@ -172,16 +173,24 @@ func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell
 	}
 
 	if err == nil {
-		res, pErr := bPipe.Peek(8388608)
+		// try to read 4MB. If we get it all then we get ErrBufferFull
+		// will this always be limited by size of buffer?
+		res, pErr := bPipe.Peek(4194304)
+		if len(res) > 20 {
+			log.Println("pErr:", pErr, "res[:20]", res[:20])
+		} else {
+			log.Println("pErr:", pErr)
+		}
 		if pErr == bufio.ErrBufferFull || pErr == io.EOF {
 			mu.Lock()
 			defer mu.Unlock()
-			// TODO: buffer Stdout
 			_, err = os.Stdout.Write(res)
-		} else {
-			tmp, xerr := ioutil.TempFile("", "gargs")
-			check(xerr)
+		} else { // otherwise, we use temporary files.
+			// TODO: these sometimes get left if process is interrupted.
+			// see how it's done in gsort in init() by adding common suffix.
+			tmp, xerr := ioutil.TempFile("", "gargsTmp.")
 			defer os.Remove(tmp.Name())
+			check(xerr)
 			bTmp := bufio.NewWriter(tmp)
 			_, err = io.Copy(bTmp, bPipe)
 			defer tmp.Close()
@@ -191,7 +200,7 @@ func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell
 					cTmp := bufio.NewReader(tmp)
 					mu.Lock()
 					defer mu.Unlock()
-					_, err = io.Copy(os.Stdout, cTmp)
+					_, err = io.Copy(bufio.NewWriter(os.Stdout), cTmp)
 				}
 
 			}
@@ -199,10 +208,7 @@ func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell
 	}
 	if err == nil {
 		err = cmd.Wait()
-	} else {
-		cmd.Process.Kill()
 	}
-
 	if err != nil {
 		var argString string
 		if tArgs.Xs != nil && len(tArgs.Xs) > 0 {
