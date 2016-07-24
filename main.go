@@ -115,12 +115,26 @@ func genTmplArgs(n int, sep string) chan *tmplArgs {
 
 type lockWriter struct {
 	*bufio.Writer
-	mu *sync.Mutex
+	err io.Writer
+	mu  *sync.Mutex
+}
+
+func (l *lockWriter) Write(b []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.Writer.Write(b)
+}
+func (l *lockWriter) Flush() {
+	l.mu.Lock()
+	l.Writer.Flush()
+	l.mu.Unlock()
+
 }
 
 func run(args Params, shell string) {
 
-	stdout := lockWriter{bufio.NewWriter(os.Stdout),
+	stdout := &lockWriter{bufio.NewWriter(os.Stdout),
+		os.Stderr,
 		&sync.Mutex{},
 	}
 	defer stdout.Flush()
@@ -151,10 +165,40 @@ func makeCommand(cmd string) string {
 	return v
 }
 
-func process(stdout lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, shell string) {
+func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, shell string) {
 
 	tmpl, err := template.New(cmdStr).Parse(cmdStr)
 	check(err)
+
+	handleError := func(err error) {
+		if err == nil {
+			return
+		}
+		var argString string
+		if tArgs.Xs != nil && len(tArgs.Xs) > 0 {
+			argString = strings.Join(tArgs.Xs, ",")
+		} else {
+			argString = strings.Join(tArgs.Lines, "|")
+		}
+		stdout.mu.Lock()
+		fmt.Fprintf(stdout.err, "[===\nERROR in command: %s using args: %s\n%s\n===]\n", cmdStr, argString, err)
+		stdout.mu.Unlock()
+		if ex, ok := err.(*exec.ExitError); ok {
+			if st, ok := ex.Sys().(syscall.WaitStatus); ok {
+				if !args.ContinueOnError {
+					os.Exit(st.ExitStatus())
+				} else if st.ExitStatus() > ExitCode {
+					ExitCode = st.ExitStatus()
+				}
+			}
+		} else {
+			if !args.ContinueOnError {
+				os.Exit(1)
+			} else {
+				ExitCode = 1
+			}
+		}
+	}
 
 	var buf bytes.Buffer
 	check(tmpl.Execute(&buf, tArgs))
@@ -162,7 +206,9 @@ func process(stdout lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, sh
 	cmdStr = buf.String()
 
 	if args.Verbose {
-		fmt.Fprintf(os.Stderr, "command: %s\n", cmdStr)
+		stdout.mu.Lock()
+		fmt.Fprintf(stdout.err, "command: %s\n", cmdStr)
+		stdout.mu.Unlock()
 	}
 	if args.DryRun {
 		stdout.mu.Lock()
@@ -174,66 +220,64 @@ func process(stdout lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, sh
 	cmd := exec.Command(shell, "-c", cmdStr)
 	cmd.Stderr = os.Stderr
 	pipe, err := cmd.StdoutPipe()
-	log.Println("err 0:", err)
-	var bPipe *bufio.Reader
-	if err == nil {
-		bPipe = bufio.NewReader(pipe)
-		err = cmd.Start()
+	handleError(err)
+	if err != nil {
+		return
 	}
-	log.Println("err 1:", err)
 
-	if err == nil {
-		// try to read 4MB. If we get it all then we get ErrBufferFull
-		// will this always be limited by size of buffer?
-		res, pErr := bPipe.Peek(4194304)
-		log.Println("pErr:", pErr)
+	err = cmd.Start()
+	handleError(err)
+	if err != nil {
+		return
+	}
+
+	// we pass any possible errors back on this channel
+	// and exit the main function when the following goroutine closes it.
+	errors := make(chan error)
+
+	// try to read 4MB. If we get it all then we get ErrBufferFull
+	// will this always be limited by size of bufio reader buffer?
+	go func() {
+		bPipe := bufio.NewReaderSize(pipe, 1048576)
+		res, pErr := bPipe.Peek(1048576)
+		//res, pErr := bPipe.Peek(2)
 		if pErr == bufio.ErrBufferFull || pErr == io.EOF {
-			stdout.mu.Lock()
-			defer stdout.mu.Unlock()
-			var n int
-			n, err = stdout.Write(res)
-			log.Println("n, err 2:", n, err)
+			_, err = stdout.Write(res)
+			if err != nil {
+				errors <- err
+			}
+		} else if pErr != nil {
+			errors <- pErr
 		} else { // otherwise, we use temporary files.
-			// TODO: these sometimes get left if process is interrupted.
+			// TODO: tmpfiles sometimes get left if process is interrupted.
 			// see how it's done in gsort in init() by adding common suffix.
 			tmp, xerr := ioutil.TempFile("", "gargsTmp.")
-			defer os.Remove(tmp.Name())
 			check(xerr)
 			bTmp := bufio.NewWriter(tmp)
-			_, err = io.Copy(bTmp, bPipe)
+			defer os.Remove(tmp.Name())
 			defer tmp.Close()
-			if err == nil {
-				if err == nil {
-					tmp.Seek(0, 0)
-					cTmp := bufio.NewReader(tmp)
-					stdout.mu.Lock()
-					defer stdout.mu.Unlock()
-					_, err = io.Copy(stdout, cTmp)
-				}
+			_, err = io.Copy(bTmp, bPipe)
+			if err != nil {
+				errors <- err
+				close(errors)
+				return
+			}
+			bTmp.Flush()
 
-			}
+			tmp.Seek(0, 0)
+			cTmp := bufio.NewReader(tmp)
+			_, err = io.Copy(stdout, cTmp)
+			errors <- err
+			stdout.Flush()
 		}
+		stdout.Flush()
+		close(errors)
+	}()
+
+	for e := range errors {
+		handleError(e)
 	}
-	if err == nil {
-		err = cmd.Wait()
-	} else {
-		cmd.Wait()
-	}
-	if err != nil {
-		var argString string
-		if tArgs.Xs != nil && len(tArgs.Xs) > 0 {
-			argString = strings.Join(tArgs.Xs, ",")
-		} else {
-			argString = strings.Join(tArgs.Lines, "|")
-		}
-		fmt.Fprintf(os.Stderr, "[===\nERROR in command: %s using args: %s\n%s\n===]\n", cmdStr, argString, err)
-		ex := err.(*exec.ExitError)
-		if st, ok := ex.Sys().(syscall.WaitStatus); ok {
-			if !args.ContinueOnError {
-				os.Exit(st.ExitStatus())
-			} else if st.ExitStatus() > ExitCode {
-				ExitCode = st.ExitStatus()
-			}
-		}
-	}
+
+	handleError(cmd.Wait())
+
 }

@@ -24,10 +24,6 @@ fn_check_sep() {
 }
 run check_sep fn_check_sep
 assert_exit_code 0
-echo "catting stderr"
-ls -lh tests/t.txt
-cat $STDERR_FILE
-cat $STDOUT_FILE
 assert_in_stdout "chr2:22-33 full-line: 'chr2 22 33'"
 assert_in_stdout "chr1:22-33 full-line: 'chr1 22 33'"
 assert_in_stdout "chr3:22-33 full-line: 'chr3 22 33'"
@@ -54,6 +50,16 @@ assert_equal "6" $(wc -l $STDOUT_FILE)
 fn_test_filehandles(){
 	seq 1 2000 | ./gargs_race -p 5 "echo {}"
 }
-wait
 run check_filehandles fn_test_filehandles
 assert_exit_code 0
+
+
+
+# different code-path that uses tmpfiles if we have > 4MB of data for each
+fn_test_big() {
+	seq 10 | SHELL=python go run main.go  "for i in range(100): print ''.join('{}' for i in xrange(90000))"
+}
+run check_big fn_test_big
+assert_exit_code 0
+assert_equal 1000 $(cat $STDOUT_FILE | wc -l)
+

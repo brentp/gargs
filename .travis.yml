@@ -5,8 +5,7 @@ os:
   - osx
 
 go:
-  - 1.5
-  - 1.6
+  - 1.7rc3
 
 script:
     - ./tests/functional-test.sh
