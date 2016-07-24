@@ -58,8 +58,7 @@ func main() {
 		os.Exit(255)
 	}
 	runtime.GOMAXPROCS(args.Procs)
-	runUnOrdered(args, shell)
-	defer os.Stdout.Close()
+	run(args, shell)
 	os.Exit(ExitCode)
 }
 
@@ -114,23 +113,32 @@ func genTmplArgs(n int, sep string) chan *tmplArgs {
 	return ch
 }
 
-func runUnOrdered(args Params, shell string) {
+type lockWriter struct {
+	*bufio.Writer
+	mu *sync.Mutex
+}
+
+func run(args Params, shell string) {
+
+	stdout := lockWriter{bufio.NewWriter(os.Stdout),
+		&sync.Mutex{},
+	}
+	defer stdout.Flush()
+
 	chXargs := genTmplArgs(args.Nlines, args.Sep)
 	cmd := makeCommand(args.Command)
-	mu := &sync.Mutex{}
 	var wg sync.WaitGroup
 	wg.Add(args.Procs)
 
-	go func() {
-		for i := 0; i < args.Procs; i++ {
-			go func() {
-				defer wg.Done()
-				for x := range chXargs {
-					process(mu, cmd, &args, x, shell)
-				}
-			}()
-		}
-	}()
+	for i := 0; i < args.Procs; i++ {
+		go func() {
+			defer wg.Done()
+			for x := range chXargs {
+				process(stdout, cmd, &args, x, shell)
+			}
+		}()
+	}
+
 	wg.Wait()
 }
 
@@ -143,7 +151,7 @@ func makeCommand(cmd string) string {
 	return v
 }
 
-func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell string) {
+func process(stdout lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, shell string) {
 
 	tmpl, err := template.New(cmdStr).Parse(cmdStr)
 	check(err)
@@ -157,34 +165,34 @@ func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell
 		fmt.Fprintf(os.Stderr, "command: %s\n", cmdStr)
 	}
 	if args.DryRun {
-		mu.Lock()
+		stdout.mu.Lock()
 		fmt.Fprintf(os.Stdout, "%s\n", cmdStr)
-		mu.Unlock()
+		stdout.mu.Unlock()
 		return
 	}
 
 	cmd := exec.Command(shell, "-c", cmdStr)
 	cmd.Stderr = os.Stderr
 	pipe, err := cmd.StdoutPipe()
+	log.Println("err 0:", err)
 	var bPipe *bufio.Reader
 	if err == nil {
 		bPipe = bufio.NewReader(pipe)
 		err = cmd.Start()
 	}
+	log.Println("err 1:", err)
 
 	if err == nil {
 		// try to read 4MB. If we get it all then we get ErrBufferFull
 		// will this always be limited by size of buffer?
 		res, pErr := bPipe.Peek(4194304)
-		if len(res) > 20 {
-			log.Println("pErr:", pErr, "res[:20]", res[:20])
-		} else {
-			log.Println("pErr:", pErr)
-		}
+		log.Println("pErr:", pErr)
 		if pErr == bufio.ErrBufferFull || pErr == io.EOF {
-			mu.Lock()
-			defer mu.Unlock()
-			_, err = os.Stdout.Write(res)
+			stdout.mu.Lock()
+			defer stdout.mu.Unlock()
+			var n int
+			n, err = stdout.Write(res)
+			log.Println("n, err 2:", n, err)
 		} else { // otherwise, we use temporary files.
 			// TODO: these sometimes get left if process is interrupted.
 			// see how it's done in gsort in init() by adding common suffix.
@@ -198,9 +206,9 @@ func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell
 				if err == nil {
 					tmp.Seek(0, 0)
 					cTmp := bufio.NewReader(tmp)
-					mu.Lock()
-					defer mu.Unlock()
-					_, err = io.Copy(bufio.NewWriter(os.Stdout), cTmp)
+					stdout.mu.Lock()
+					defer stdout.mu.Unlock()
+					_, err = io.Copy(stdout, cTmp)
 				}
 
 			}
@@ -208,6 +216,8 @@ func process(mu *sync.Mutex, cmdStr string, args *Params, tArgs *tmplArgs, shell
 	}
 	if err == nil {
 		err = cmd.Wait()
+	} else {
+		cmd.Wait()
 	}
 	if err != nil {
 		var argString string
