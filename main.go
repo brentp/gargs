@@ -28,12 +28,13 @@ var ExitCode = 0
 
 // Params are the user-specified command-line arguments
 type Params struct {
-	Procs           int    `arg:"-p,help:number of processes to use"`
+	Procs           int    `arg:"-p,help:number of processes to use."`
 	Nlines          int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
-	Command         string `arg:"positional,required,help:command to execute"`
+	Command         string `arg:"positional,required,help:command to execute."`
 	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
 	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
+	Ordered         bool   `arg:"-o,help:keep output in order of input at cost of reduced parallelization; default is to output in order of return."`
 	DryRun          bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
 }
 
@@ -45,10 +46,6 @@ type tmplArgs struct {
 
 func main() {
 	args := Params{Procs: 1, Nlines: 1}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "bash"
-	}
 	p := arg.MustParse(&args)
 	if args.Sep != "" && args.Nlines > 1 {
 		p.Fail("must specify either sep (-s) or n-lines (-n), not both")
@@ -58,7 +55,7 @@ func main() {
 		os.Exit(255)
 	}
 	runtime.GOMAXPROCS(args.Procs)
-	run(args, shell)
+	run(args)
 	os.Exit(ExitCode)
 }
 
@@ -114,28 +111,20 @@ func genTmplArgs(n int, sep string) chan *tmplArgs {
 }
 
 type lockWriter struct {
+	mu *sync.Mutex
 	*bufio.Writer
+
+	emu *sync.Mutex
 	err io.Writer
-	mu  *sync.Mutex
 }
 
-func (l *lockWriter) Write(b []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.Writer.Write(b)
-}
-func (l *lockWriter) Flush() {
-	l.mu.Lock()
-	l.Writer.Flush()
-	l.mu.Unlock()
+func run(args Params) {
 
-}
-
-func run(args Params, shell string) {
-
-	stdout := &lockWriter{bufio.NewWriter(os.Stdout),
-		os.Stderr,
+	stdout := &lockWriter{
 		&sync.Mutex{},
+		bufio.NewWriter(os.Stdout),
+		&sync.Mutex{},
+		os.Stderr,
 	}
 	defer stdout.Flush()
 
@@ -148,7 +137,7 @@ func run(args Params, shell string) {
 		go func() {
 			defer wg.Done()
 			for x := range chXargs {
-				process(stdout, cmd, &args, x, shell)
+				process(stdout, cmd, &args, x)
 			}
 		}()
 	}
@@ -165,7 +154,15 @@ func makeCommand(cmd string) string {
 	return v
 }
 
-func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, shell string) {
+func getShell() string {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "sh"
+	}
+	return shell
+}
+
+func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs) {
 
 	tmpl, err := template.New(cmdStr).Parse(cmdStr)
 	check(err)
@@ -180,9 +177,9 @@ func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, s
 		} else {
 			argString = strings.Join(tArgs.Lines, "|")
 		}
-		stdout.mu.Lock()
+		stdout.emu.Lock()
 		fmt.Fprintf(stdout.err, "[===\nERROR in command: %s using args: %s\n%s\n===]\n", cmdStr, argString, err)
-		stdout.mu.Unlock()
+		stdout.emu.Unlock()
 		if ex, ok := err.(*exec.ExitError); ok {
 			if st, ok := ex.Sys().(syscall.WaitStatus); ok {
 				if !args.ContinueOnError {
@@ -206,18 +203,18 @@ func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, s
 	cmdStr = buf.String()
 
 	if args.Verbose {
-		stdout.mu.Lock()
+		stdout.emu.Lock()
 		fmt.Fprintf(stdout.err, "command: %s\n", cmdStr)
-		stdout.mu.Unlock()
+		stdout.emu.Unlock()
 	}
 	if args.DryRun {
 		stdout.mu.Lock()
-		fmt.Fprintf(os.Stdout, "%s\n", cmdStr)
+		fmt.Fprintf(stdout, "%s\n", cmdStr)
 		stdout.mu.Unlock()
 		return
 	}
 
-	cmd := exec.Command(shell, "-c", cmdStr)
+	cmd := exec.Command(getShell(), "-c", cmdStr)
 	cmd.Stderr = os.Stderr
 	pipe, err := cmd.StdoutPipe()
 	handleError(err)
@@ -235,14 +232,19 @@ func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, s
 	// and exit the main function when the following goroutine closes it.
 	errors := make(chan error)
 
-	// try to read 4MB. If we get it all then we get ErrBufferFull
+	// try to read 1MB. If we get it all then we get ErrBufferFull
 	// will this always be limited by size of bufio reader buffer?
 	go func() {
+		defer close(errors)
+		defer func() { errors <- cmd.Wait() }()
+
 		bPipe := bufio.NewReaderSize(pipe, 1048576)
 		res, pErr := bPipe.Peek(1048576)
 		//res, pErr := bPipe.Peek(2)
 		if pErr == bufio.ErrBufferFull || pErr == io.EOF {
+			stdout.mu.Lock()
 			_, err = stdout.Write(res)
+			stdout.mu.Unlock()
 			if err != nil {
 				errors <- err
 			}
@@ -253,31 +255,30 @@ func process(stdout *lockWriter, cmdStr string, args *Params, tArgs *tmplArgs, s
 			// see how it's done in gsort in init() by adding common suffix.
 			tmp, xerr := ioutil.TempFile("", "gargsTmp.")
 			check(xerr)
-			bTmp := bufio.NewWriter(tmp)
 			defer os.Remove(tmp.Name())
-			defer tmp.Close()
-			_, err = io.Copy(bTmp, bPipe)
+			bTmp := bufio.NewWriter(tmp)
+			// copy the output of the command into the tmp file
+			_, err = io.CopyBuffer(bTmp, bPipe, res)
 			if err != nil {
 				errors <- err
-				close(errors)
 				return
 			}
+			errors <- pipe.Close()
 			bTmp.Flush()
 
-			tmp.Seek(0, 0)
-			cTmp := bufio.NewReader(tmp)
-			_, err = io.Copy(stdout, cTmp)
+			// copy the tmp file to stdout.
+			_, err := tmp.Seek(0, 0)
 			errors <- err
-			stdout.Flush()
+			cTmp := bufio.NewReaderSize(tmp, 1048576)
+			stdout.mu.Lock()
+			_, err = io.CopyBuffer(stdout, cTmp, res)
+			stdout.mu.Unlock()
+			errors <- err
 		}
-		stdout.Flush()
-		close(errors)
 	}()
 
 	for e := range errors {
 		handleError(e)
 	}
-
-	handleError(cmd.Wait())
 
 }

@@ -19,6 +19,8 @@ Work In Progress:
 + easy to specify multiple arguments with number blocks ({0}, {1}, ...) and {} indicates the entire line.
 + easy to use multiple lines to fill command-template.
 + it defaults to exiting all commands when an error in one of them occurs.
++ simple implementation.
++ expects a $SHELL command as the argument.
 
 For example, can consume lines of 3 (-n2) and use each line as an `{\d}` command-template filler:
 
@@ -38,19 +40,26 @@ Install
 Download the appropriate binary for your system from [releases](https://github.com/brentp/gargs/releases) into your $PATH.
 
 
-Limitations
-===========
+Implementation
+==============
 
-Potentially many processes are writing to the single STDOUT. Currently,
-this is handled by reading all output from each process into memory and then
-writing that to STDOUT as soon as the previous process has finished writing.
-This can lead to large memory use (even if there is no blocking or waiting)
-if the output from each command is large.
+`gargs` will span a worker goroutine for each core requested via `-p`.
+It will attempt to read up to 1MB of output from each process into memory.
+If it reaches an EOF (the end of the output from the process), then it will
+write that to stdout. If not, it will write to a temporary file to keeps
+memory usage low.
 
-This can be mitigated by reading the output of each as a stream and sending
-to STDOUT in chunks of lines but this assumes all output is line-wise.
+Each process is run via golang's [os/exec#Cmd](https://golang.org/pkg/os/exec/#Cmd) with
+output sent to a pipe. The pipe is then read in another go routine. There is very little overhead
+for this per-call; comparing `xargs` to `gargs`:
 
-We may also be able to mitigate by using io.PipeReader.
+```
+seq 1 1000 | xargs -I {} bash -c 'echo {}' > /dev/null
+seq 1 1000 | gargs 'echo {}' > /dev/null
+```
+
+gargs takes about 1.05 seconds while xargs takes 0.81 seconds.
+
 
 Example
 =======

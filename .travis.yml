@@ -9,4 +9,5 @@ go:
 
 script:
     - ./tests/functional-test.sh
+      #    - ORDERED="-o" ./tests/functional-test.sh
 
