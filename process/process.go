@@ -39,11 +39,11 @@ func (c *Command) String() string {
 }
 
 // ExitCode returns the exit code associated with a given error
-func (o *Command) ExitCode() int {
-	if o.Err == nil {
+func (c *Command) ExitCode() int {
+	if c.Err == nil {
 		return 0
 	}
-	if ex, ok := o.Err.(*exec.ExitError); ok {
+	if ex, ok := c.Err.(*exec.ExitError); ok {
 		if st, ok := ex.Sys().(syscall.WaitStatus); ok {
 			return st.ExitStatus()
 		}
@@ -61,15 +61,15 @@ func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Comma
 
 // Run takes a command string, executes the command, and sends the (realized) output to stdout
 // and returns any error
-func Run(command string, stdout chan<- *Command, stderr ...io.Writer) error {
+func Run(command string, stderr ...io.Writer) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
 
 	opipe, err := cmd.StdoutPipe()
 	if err != nil {
-		opipe.Close()
-		return err
+		return newCommand(nil, "", command, err)
 	}
+	defer opipe.Close()
 
 	if len(stderr) != 0 {
 		cmd.Stderr = stderr[0]
@@ -77,78 +77,63 @@ func Run(command string, stdout chan<- *Command, stderr ...io.Writer) error {
 		cmd.Stderr = os.Stderr
 	}
 
-	func() {
-		err = cmd.Start()
-		if err != nil {
-			stdout <- newCommand(nil, "", command, err)
-			return
-		}
+	err = cmd.Start()
+	if err != nil {
+		return newCommand(nil, "", command, err)
+	}
 
-		bpipe := bufio.NewReaderSize(opipe, BufferSize)
-		var res []byte
-		res, err = bpipe.Peek(BufferSize)
+	bpipe := bufio.NewReaderSize(opipe, BufferSize)
+	var res []byte
+	res, err = bpipe.Peek(BufferSize)
 
-		// less than BufferSize bytes in output...
-		if err == bufio.ErrBufferFull || err == io.EOF {
-			err = cmd.Wait()
-			stdout <- newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
-			return
-		}
+	// less than BufferSize bytes in output...
+	if err == bufio.ErrBufferFull || err == io.EOF {
+		err = cmd.Wait()
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
+	}
+	if err != nil {
+		return newCommand(nil, "", command, err)
+	}
 
-		// more than BufferSize bytes in output. must use tmpfile
-		var tmp *os.File
-		tmp, err = ioutil.TempFile("", "gargsTmp.")
-		if err != nil {
-			stdout <- newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
-			return
-		}
-		btmp := bufio.NewWriter(tmp)
-		_, err = io.CopyBuffer(btmp, bpipe, res)
-		if err != nil {
-			stdout <- newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
-			return
-		}
-		err = opipe.Close()
-		if err != nil {
-			return
-		}
-		btmp.Flush()
-
-		_, err = tmp.Seek(0, 0)
-		if err != nil {
-			return
-		}
-		stdout <- newCommand(bufio.NewReader(tmp), tmp.Name(), command, nil)
-	}()
-	return err
+	// more than BufferSize bytes in output. must use tmpfile
+	var tmp *os.File
+	tmp, err = ioutil.TempFile("", "gargsTmp.")
+	if err != nil {
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
+	}
+	btmp := bufio.NewWriter(tmp)
+	_, err = io.CopyBuffer(btmp, bpipe, res)
+	if err != nil {
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
+	}
+	err = opipe.Close()
+	btmp.Flush()
+	_, err = tmp.Seek(0, 0)
+	return newCommand(bufio.NewReader(tmp), tmp.Name(), command, err)
 }
 
-// Runner accepts commands from a channel and writes the output, errors to errors.
-func Runner(commands <-chan string, stderr ...io.Writer) (stdout chan *Command) {
-	stdout = make(chan *Command)
+// Runner accepts commands from a channel sends a bufio.Reader on the returned channel.
+// It will parallelize according to GOMAXPROCS.
+func Runner(commands <-chan string, stderr ...io.Writer) chan *Command {
 
-	var oerr io.Writer = os.Stderr
-	if len(stderr) > 0 {
-		oerr = stderr[0]
-	}
+	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
+
 	wg := &sync.WaitGroup{}
 	wg.Add(runtime.GOMAXPROCS(0))
 
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		go func() {
 			defer wg.Done()
-			for cmd := range commands {
-				err := Run(cmd, stdout, stderr...)
-				if err != nil {
-					oerr.Write([]byte(err.Error()))
-
-				}
+			for cmdStr := range commands {
+				stdout <- Run(cmdStr, stderr...)
 			}
 		}()
 	}
+
 	go func() {
 		wg.Wait()
 		close(stdout)
 	}()
+
 	return stdout
 }

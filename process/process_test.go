@@ -8,20 +8,17 @@ import (
 	"github.com/brentp/gargs/process"
 )
 
+/*
 func TestValidCommand(t *testing.T) {
 
-	och := make(chan *process.Command, 1)
+	cmdStr := "go version"
 
-	cmd := "go version"
-
-	err := process.Run(cmd, och)
-	if err != nil {
-		t.Fatal(err)
+	cmd := process.Run(cmdStr)
+	if cmd.Err != nil && cmd.Err != io.EOF {
+		t.Fatal(cmd.Err)
 	}
 
-	proc := <-och
-
-	out, err := bufio.NewReader(proc).ReadString('\n')
+	out, err := bufio.NewReader(cmd).ReadString('\n')
 	if err != nil {
 		t.Errorf("error running command: %s\n%s", cmd, err)
 	}
@@ -30,34 +27,27 @@ func TestValidCommand(t *testing.T) {
 		t.Errorf("error running command: %s", cmd)
 	}
 
-	if proc.ExitCode() != 0 {
-		t.Errorf("non-zero exit code %d for command : %s", proc.ExitCode, cmd)
+	if cmd.ExitCode() != 0 {
+		t.Errorf("non-zero exit code %d for command : %s", cmd.ExitCode(), cmd)
 	}
-	close(och)
 }
+*/
 
 func TestInvalidCommand(t *testing.T) {
 
-	och := make(chan *process.Command, 1)
+	cmdStr := "XXXXXX go version"
 
-	cmd := "XXXXXX go version"
-
-	err := process.Run(cmd, och)
-	if err == nil {
-		t.Fatalf("expected error with cmd %s", cmd)
+	cmd := process.Run(cmdStr)
+	if cmd.Err == nil {
+		t.Fatalf("expected error with cmd %s", cmd.Err)
 	}
 
-	proc := <-och
-	close(och)
-
-	if proc.ExitCode() == 0 {
+	if cmd.ExitCode() == 0 {
 		t.Errorf("zero exit code for bad command : %s", cmd)
 	}
 }
 
 func TestProcessor(t *testing.T) {
-
-	och := make(chan *process.Command)
 
 	cmd := make(chan string)
 	go func() {
@@ -84,9 +74,7 @@ func TestProcessor(t *testing.T) {
 		if proc.ExitCode() != 0 {
 			t.Errorf("non-zero exit code %d for command : %s", proc.ExitCode, cmd)
 		}
-		k += 1
+		k++
 	}
-
-	close(och)
 
 }
