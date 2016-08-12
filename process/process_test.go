@@ -2,13 +2,33 @@ package process_test
 
 import (
 	"bufio"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/brentp/gargs/process"
 )
 
-/*
+func TestLongOutput(t *testing.T) {
+	// make sure we we test the buffer output.
+	cmdStr := "seq 999999"
+	cmd := process.Run(cmdStr)
+	if cmd.Err != nil {
+		t.Fatal(cmd.Err)
+	}
+
+}
+
+func TestSigPipe(t *testing.T) {
+	// make sure we we test the buffer output.
+	cmdStr := "seq 999999 | head"
+	cmd := process.Run(cmdStr)
+	if cmd.Err != nil {
+		t.Fatal(cmd.Err)
+	}
+
+}
+
 func TestValidCommand(t *testing.T) {
 
 	cmdStr := "go version"
@@ -31,7 +51,6 @@ func TestValidCommand(t *testing.T) {
 		t.Errorf("non-zero exit code %d for command : %s", cmd.ExitCode(), cmd)
 	}
 }
-*/
 
 func TestInvalidCommand(t *testing.T) {
 
@@ -75,6 +94,29 @@ func TestProcessor(t *testing.T) {
 			t.Errorf("non-zero exit code %d for command : %s", proc.ExitCode, cmd)
 		}
 		k++
+	}
+
+}
+
+func TestLongRunnerError(t *testing.T) {
+	// make sure we we test the buffer output.
+	cmds := make(chan string)
+	go func() {
+		cmds <- "seq 999999"
+		cmds <- "exit 61"
+		cmds <- "sleep 0.5"
+		close(cmds)
+	}()
+
+	codes := make([]int, 0, 3)
+	for o := range process.Runner(cmds) {
+		codes = append(codes, o.ExitCode())
+	}
+	if codes[0] != 61 && codes[1] != 61 && codes[2] != 61 {
+		t.Fatal("expected an exit code of 61")
+	}
+	if codes[0] != 0 && codes[1] != 0 && codes[2] != 0 {
+		t.Fatal("expected an exit code of 0")
 	}
 
 }

@@ -51,12 +51,16 @@ func (c *Command) ExitCode() int {
 	return UnknownExit
 }
 
+func cleanup(c *Command) {
+	os.Remove(c.tmpName)
+}
+
 func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Command {
-	o := &Command{rdr, tmpName, err, cmd}
+	c := &Command{rdr, tmpName, err, cmd}
 	if tmpName != "" {
-		runtime.SetFinalizer(os.Remove, tmpName)
+		runtime.SetFinalizer(c, cleanup)
 	}
-	return o
+	return c
 }
 
 // Run takes a command string, executes the command, and sends the (realized) output to stdout
