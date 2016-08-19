@@ -5,9 +5,10 @@ os:
   - osx
 
 go:
-  - 1.7rc3
+  - 1.7
 
 script:
     - ./tests/functional-test.sh
+    - cd process && go test
       #    - ORDERED="-o" ./tests/functional-test.sh
 

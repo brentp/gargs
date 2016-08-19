@@ -20,7 +20,7 @@ Work In Progress:
 + easy to use multiple lines to fill command-template.
 + it defaults to exiting all commands when an error in one of them occurs.
 + simple implementation.
-+ expects a $SHELL command as the argument.
++ expects a $SHELL command as the argument rather than requiring `bash -c ...`
 
 For example, can consume lines of 3 (-n2) and use each line as an `{\d}` command-template filler:
 
@@ -50,15 +50,14 @@ write that to stdout. If not, it will write to a temporary file to keeps
 memory usage low.
 
 Each process is run via golang's [os/exec#Cmd](https://golang.org/pkg/os/exec/#Cmd) with
-output sent to a pipe. The pipe is then read in another go routine. There is very little overhead
-for this per-call; comparing `xargs` to `gargs`:
+output sent to a pipe. There is very little overhead for this per-call; comparing `xargs` to `gargs`:
 
 ```
-seq 1 1000 | xargs -I {} bash -c 'echo {}' > /dev/null
-seq 1 1000 | gargs 'echo {}' > /dev/null
+seq 1 5000 | xargs -I {} bash -c 'echo {}' > /dev/null
+seq 1 5000 | gargs 'echo {}' > /dev/null
 ```
 
-gargs takes about 1.05 seconds while xargs takes 0.81 seconds.
+gargs takes about 4.6 seconds while xargs takes 4.0 seconds.
 
 
 Example

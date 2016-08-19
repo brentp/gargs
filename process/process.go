@@ -3,11 +3,13 @@ package process
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -34,8 +36,21 @@ type Command struct {
 	cmd     string
 }
 
+func (c *Command) error() string {
+	if c == nil || c.Err == nil {
+		return ""
+	}
+	return c.Err.Error()
+}
+
 func (c *Command) String() string {
-	return c.cmd
+	cmd := c.cmd
+	if len(c.cmd) > 100 {
+		cmd = cmd[:80] + "..."
+	}
+	out, _ := c.Peek(20)
+	return fmt.Sprintf("Command('%s', output[:20]: %s, exit-code: %d, error: %s)",
+		cmd, strings.Replace(string(out), "\n", "\\n", -1), c.ExitCode(), c.error())
 }
 
 // ExitCode returns the exit code associated with a given error
