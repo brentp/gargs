@@ -76,7 +76,10 @@ func TestProcessor(t *testing.T) {
 	}()
 
 	k := 0
-	for proc := range process.Runner(cmd) {
+
+	done := make(chan bool)
+	defer close(done)
+	for proc := range process.Runner(cmd, done) {
 
 		out, err := bufio.NewReader(proc).ReadString('\n')
 		if err != nil {
@@ -108,8 +111,10 @@ func TestLongRunnerError(t *testing.T) {
 		close(cmds)
 	}()
 
+	done := make(chan bool)
+	defer close(done)
 	codes := make([]int, 0, 3)
-	for o := range process.Runner(cmds) {
+	for o := range process.Runner(cmds, done) {
 		codes = append(codes, o.ExitCode())
 	}
 	if codes[0] != 61 && codes[1] != 61 && codes[2] != 61 {

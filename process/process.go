@@ -63,8 +63,9 @@ func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Comma
 	return c
 }
 
-// Run takes a command string, executes the command, and sends the (realized) output to stdout
-// and returns any error
+// Run takes a command string, executes the command,
+// Blocks until the output is finished and returns a *Command
+// that is an io.Reader
 func Run(command string, stderr ...io.Writer) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
@@ -116,24 +117,35 @@ func Run(command string, stderr ...io.Writer) *Command {
 	return newCommand(bufio.NewReader(tmp), tmp.Name(), command, err)
 }
 
-// Runner accepts commands from a channel sends a bufio.Reader on the returned channel.
+// Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
+// done allows the caller to stop Runner, for example if an error occurs.
 // It will parallelize according to GOMAXPROCS.
-func Runner(commands <-chan string, stderr ...io.Writer) chan *Command {
+func Runner(commands <-chan string, done <-chan bool, stderr ...io.Writer) chan *Command {
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
 	wg := &sync.WaitGroup{}
 	wg.Add(runtime.GOMAXPROCS(0))
 
+	// Start a number of workers equal to the requested procs.
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		go func() {
 			defer wg.Done()
+			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
-				stdout <- Run(cmdStr, stderr...)
+				select {
+				case stdout <- Run(cmdStr, stderr...):
+				// if we receive from this, we must exit.
+				// receive from closed channel will continually yield false
+				// so it does what we expect.
+				case <-done:
+					return
+				}
 			}
 		}()
 	}
 
+	// wait for all the workers to finish.
 	go func() {
 		wg.Wait()
 		close(stdout)
