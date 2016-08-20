@@ -116,6 +116,14 @@ options:
 
 **NOTE** that the default is to stop on the first error. Use `-c` to continue on an error.
 
+API
+===
+
+There is also a simple API for running shell processes in the process subdirectory with documentation [here](https://godoc.org/github.com/brentp/gargs/process)
+
+[![GoDoc] (https://godoc.org/github.com/brentp/gargs/process?status.png)](https://godoc.org/github.com/brentp/gargs/process)
+
+
 
 TODO
 ====
