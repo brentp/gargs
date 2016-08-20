@@ -131,7 +131,7 @@ func Run(command string) *Command {
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
 // done allows the caller to stop Runner, for example if an error occurs.
 // It will parallelize according to GOMAXPROCS.
-func Runner(commands <-chan string, cancel <-chan bool, stderr ...io.Writer) chan *Command {
+func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Command {
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
@@ -144,8 +144,15 @@ func Runner(commands <-chan string, cancel <-chan bool, stderr ...io.Writer) cha
 			defer wg.Done()
 			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
+				var v *Command
+				for k := 0; k < retries+1; k++ {
+					v = Run(cmdStr)
+					if v.ExitCode() == 0 {
+						break
+					}
+				}
 				select {
-				case stdout <- Run(cmdStr):
+				case stdout <- v:
 				// if we receive from this, we must exit.
 				// receive from closed channel will continually yield false
 				// so it does what we expect.

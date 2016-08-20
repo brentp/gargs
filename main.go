@@ -27,6 +27,7 @@ var ExitCode = 0
 type Params struct {
 	Procs           int    `arg:"-p,help:number of processes to use."`
 	Nlines          int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
+	Retry           int    `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
 	Command         string `arg:"positional,required,help:command to execute."`
 	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
@@ -137,11 +138,10 @@ func run(args Params) {
 	cancel := make(chan bool)
 	defer close(cancel)
 
-	for p := range process.Runner(cmds, cancel) {
+	for p := range process.Runner(cmds, args.Retry, cancel) {
 		if ex := p.ExitCode(); ex != 0 {
 			ExitCode = max(ExitCode, ex)
 			if !args.ContinueOnError {
-				close(cancel)
 				break
 			}
 		}

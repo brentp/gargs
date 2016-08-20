@@ -18,6 +18,7 @@ Work In Progress:
 + it keeps the output serialized even when using multiple threads
 + easy to specify multiple arguments with number blocks ({0}, {1}, ...) and {} indicates the entire line.
 + easy to use multiple lines to fill command-template.
++ easy to --retry each command if it fails (e.g. due to network or other intermittent error)
 + it defaults to exiting all commands when an error in one of them occurs.
 + simple implementation.
 + expects a $SHELL command as the argument rather than requiring `bash -c ...`
@@ -104,6 +105,8 @@ options:
   --nlines NLINES, -n NLINES
                          number of lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
   --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
+  --retry RETRY, -r RETRY
+                         number of times to retry a command if it fails (default is 0).
   --verbose, -v          print commands to stderr before they are executed.
   --continue-on-error, -c
                          report errors but don't stop the entire execution (which is the default).

@@ -75,3 +75,13 @@ fn_test_order() {
 }
 
 fi
+
+
+fn_check_retries() {
+	seq 0 10 | ./gargs_race --retry 3 "python -c '1/{}'"
+}
+run check_retries fn_check_retries
+assert_exit_code 1
+assert_equal $(grep -c ZeroDivisionError $STDERR_FILE) "4"
+
+
