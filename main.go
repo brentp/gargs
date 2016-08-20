@@ -62,7 +62,18 @@ func check(e error) {
 	}
 }
 
-func genCommands(args Params, tmpl *template.Template) <-chan string {
+func handleCommand(args *Params, cmd string, ch chan string) {
+	if args.Verbose {
+		fmt.Fprintf(os.Stderr, "command: %s\n", cmd)
+	}
+	if args.DryRun {
+		fmt.Fprintf(os.Stdout, "%s\n", cmd)
+		return
+	}
+	ch <- cmd
+}
+
+func genCommands(args *Params, tmpl *template.Template) <-chan string {
 	ch := make(chan string)
 	var resep *regexp.Regexp
 	if args.Sep != "" {
@@ -83,15 +94,7 @@ func genCommands(args Params, tmpl *template.Template) <-chan string {
 				if resep != nil {
 					toks := resep.Split(line, -1)
 					check(tmpl.Execute(&buf, &tmplArgs{Xs: toks, Lines: []string{line}}))
-					cmd := buf.String()
-					if args.Verbose {
-						fmt.Fprintf(os.Stderr, "command: %s\n", cmd)
-					}
-					if args.DryRun {
-						fmt.Fprintf(os.Stdout, "%s\n", cmd)
-						continue
-					}
-					ch <- cmd
+					handleCommand(args, buf.String(), ch)
 				} else {
 					lines = append(lines, line)
 				}
@@ -104,28 +107,12 @@ func genCommands(args Params, tmpl *template.Template) <-chan string {
 			if len(lines) == args.Nlines {
 				check(tmpl.Execute(&buf, &tmplArgs{Lines: lines, Xs: lines}))
 				lines = lines[:0]
-				cmd := buf.String()
-				if args.Verbose {
-					fmt.Fprintf(os.Stderr, "command: %s\n", cmd)
-				}
-				if args.DryRun {
-					fmt.Fprintf(os.Stdout, "%s\n", cmd)
-					continue
-				}
-				ch <- cmd
+				handleCommand(args, buf.String(), ch)
 			}
 		}
 		if len(lines) > 0 {
 			check(tmpl.Execute(&buf, &tmplArgs{Lines: lines, Xs: lines}))
-			cmd := buf.String()
-			if args.Verbose {
-				fmt.Fprintf(os.Stderr, "command: %s\n", cmd)
-			}
-			if args.DryRun {
-				fmt.Fprintf(os.Stdout, "%s\n", cmd)
-			} else {
-				ch <- buf.String()
-			}
+			handleCommand(args, buf.String(), ch)
 		}
 		close(ch)
 	}()
@@ -142,7 +129,7 @@ func max(a, b int) int {
 func run(args Params) {
 
 	tmpl := makeCommandTmpl(args.Command)
-	cmds := genCommands(args, tmpl)
+	cmds := genCommands(&args, tmpl)
 
 	stdout := bufio.NewWriter(os.Stdout)
 	defer stdout.Flush()
