@@ -134,14 +134,14 @@ func run(args Params) {
 	stdout := bufio.NewWriter(os.Stdout)
 	defer stdout.Flush()
 
-	done := make(chan bool)
-	defer close(done)
+	cancel := make(chan bool)
+	defer close(cancel)
 
-	for p := range process.Runner(cmds, done) {
+	for p := range process.Runner(cmds, cancel) {
 		if ex := p.ExitCode(); ex != 0 {
 			ExitCode = max(ExitCode, ex)
 			if !args.ContinueOnError {
-				close(done)
+				close(cancel)
 				break
 			}
 		}

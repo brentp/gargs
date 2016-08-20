@@ -81,7 +81,7 @@ func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Comma
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
 // that is an io.Reader
-func Run(command string, stderr ...io.Writer) *Command {
+func Run(command string) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
 
@@ -91,11 +91,7 @@ func Run(command string, stderr ...io.Writer) *Command {
 	}
 	defer opipe.Close()
 
-	if len(stderr) != 0 {
-		cmd.Stderr = stderr[0]
-	} else {
-		cmd.Stderr = os.Stderr
-	}
+	cmd.Stderr = os.Stderr
 
 	err = cmd.Start()
 	if err != nil {
@@ -135,7 +131,7 @@ func Run(command string, stderr ...io.Writer) *Command {
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
 // done allows the caller to stop Runner, for example if an error occurs.
 // It will parallelize according to GOMAXPROCS.
-func Runner(commands <-chan string, done <-chan bool, stderr ...io.Writer) chan *Command {
+func Runner(commands <-chan string, cancel <-chan bool, stderr ...io.Writer) chan *Command {
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
@@ -149,11 +145,11 @@ func Runner(commands <-chan string, done <-chan bool, stderr ...io.Writer) chan 
 			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
 				select {
-				case stdout <- Run(cmdStr, stderr...):
+				case stdout <- Run(cmdStr):
 				// if we receive from this, we must exit.
 				// receive from closed channel will continually yield false
 				// so it does what we expect.
-				case <-done:
+				case <-cancel:
 					return
 				}
 			}
