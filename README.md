@@ -22,14 +22,16 @@ Work In Progress:
 + simple implementation.
 + expects a $SHELL command as the argument rather than requiring `bash -c ...`
 
-For example, can consume lines of 3 (-n2) and use each line as an `{\d}` command-template filler:
+
+An very simple example usage with 4 processes to echo some numbers:
 
 ```
-$ seq 12 -1 1 | gargs -p 4 -n 3 "sleep {0}; echo {1} {2}"
-2 1
-5 4
-8 7
-11 10
+$ seq 5 | gargs -p 4 "echo {0}"
+1
+2
+3
+4
+5
 ```
 
 
@@ -43,11 +45,12 @@ Download the appropriate binary for your system from [releases](https://github.c
 Implementation
 ==============
 
-`gargs` will span a worker goroutine for each core requested via `-p`.
-It will attempt to read up to 1MB of output from each process into memory.
-If it reaches an EOF (the end of the output from the process), then it will
-write that to stdout. If not, it will write to a temporary file to keeps
-memory usage low.
+`gargs` will span a worker goroutine for each core requested via `-p`. It will attempt
+to read up to 1MB of output from each process into memory. If it reaches an EOF (they
+end of the output from the process) within that 1MB, then it will write that to stdout.
+If not, it will write to a temporary file TODO keep memory usage low. The output from
+each process can then be sent to STDOUT with the only work being the actual copy of
+bytes from the temp-file to STDOUT--no waiting on the process itself.
 
 Each process is run via golang's [os/exec#Cmd](https://golang.org/pkg/os/exec/#Cmd) with
 output sent to a pipe. There is very little overhead for this per-call; comparing `xargs` to `gargs`:
@@ -72,18 +75,17 @@ chr4	22	33
 That has a mixture of tabs and spaces. We can convert each line to chrom:start-end format with:
 
 ```
-$ cat t.txt | gargs --sep "\s+" -p 2 "echo '{0}:{1}-{2}' full-line: \'{}\'"
-chr2:22-33 full-line: 'chr2 22 33'
-chr1:22-33 full-line: 'chr1 22 33'
-chr3:22-33 full-line: 'chr3 22 33'
-chr4:22-33 full-line: 'chr4 22 33'
+$ cat t.txt | gargs --sep "\s+" -p 2 "echo '{0}:{1}-{2}'"
+chr2:22-33
+chr1:22-33
+chr3:22-33
+chr4:22-33
 ```
 
 In this case, we're using **2** processes to run this in parallel which will make more of a difference
-if we do something time-consuming rather than `echo`. The output will be kept in the order dictated by
-`t.txt` even if the processes finish in a different order. This is sometimes at the expense of parallelization
-efficiency.
+if we do something time-consuming rather than `echo`.
 
+Note that `{0}`, `{1}`, etc. grab the 1st, 2nd, ... values respectively. To get the entire line, use `{}`.
 
 Usage
 =====
@@ -108,6 +110,8 @@ options:
   --dry-run, -d          print (but do not run) the commands
   --help, -h             display this help and exit
 ```
+
+**NOTE** that the default is to stop on the first error. Use `-c` to continue on an error.
 
 
 TODO
