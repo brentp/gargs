@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -128,39 +129,63 @@ func Run(command string) *Command {
 	return newCommand(bufio.NewReader(tmp), tmp.Name(), command, err)
 }
 
-// Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
-// done allows the caller to stop Runner, for example if an error occurs.
-// It will parallelize according to GOMAXPROCS.
-func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Command {
+// Runner executes commands from a channel in parallel and sends a bufio.Reader on the returned channel.
+// The user can close cancel to stop Runner, for example if an error occurs.
+func Runner(commands <-chan string, retries int, ordered bool, cancel <-chan bool) chan *Command {
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
 	wg := &sync.WaitGroup{}
 	wg.Add(runtime.GOMAXPROCS(0))
 
-	// Start a number of workers equal to the requested procs.
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+	var sliceCommands []chan string
+	var stdouts []chan *Command
+
+	// we create an array of channels and push to them in order.
+	if ordered {
+		wg.Add(1)
+		nprocs := runtime.GOMAXPROCS(0)
+		sliceCommands = make([]chan string, runtime.GOMAXPROCS(0))
+		for i := 0; i < nprocs; i++ {
+			sliceCommands[i] = make(chan string)
+			stdouts = append(stdouts, make(chan *Command))
+		}
+		go func() {
+			k := 0
+			for cmd := range commands {
+				sliceCommands[k%nprocs] <- cmd
+				k++
+			}
+			for _, ch := range sliceCommands {
+				close(ch)
+			}
+		}()
+
 		go func() {
 			defer wg.Done()
-			// workers read off the same channel of incoming commands.
-			for cmdStr := range commands {
-				var v *Command
-				for k := 0; k < retries+1; k++ {
-					v = Run(cmdStr)
-					if v.ExitCode() == 0 {
+			allOK := true
+			for allOK {
+				for i := 0; i < nprocs; i++ {
+					v, ok := <-stdouts[i]
+					log.Println(i, v)
+
+					if !ok {
+						allOK = false
 						break
 					}
-				}
-				select {
-				case stdout <- v:
-				// if we receive from this, we must exit.
-				// receive from closed channel will continually yield false
-				// so it does what we expect.
-				case <-cancel:
-					return
+					stdout <- v
 				}
 			}
 		}()
+	}
+
+	// Start a number of workers equal to the requested procs.
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		if ordered {
+			go unordered(sliceCommands[i], retries, cancel, wg, stdouts[i], ordered)
+		} else {
+			go unordered(commands, retries, cancel, wg, stdout, ordered)
+		}
 	}
 
 	// wait for all the workers to finish.
@@ -170,4 +195,30 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Comma
 	}()
 
 	return stdout
+}
+
+func unordered(commands <-chan string, retries int, cancel <-chan bool, wg *sync.WaitGroup, stdout chan *Command, ordered bool) {
+	defer wg.Done()
+	if ordered {
+		defer close(stdout)
+	}
+
+	// workers read off the same channel of incoming commands.
+	for cmdStr := range commands {
+		var v *Command
+		for k := 0; k < retries+1; k++ {
+			v = Run(cmdStr)
+			if v.ExitCode() == 0 {
+				break
+			}
+		}
+		select {
+		case stdout <- v:
+		// if we receive from this, we must exit.
+		// receive from closed channel will continually yield false
+		// so it does what we expect.
+		case <-cancel:
+			return
+		}
+	}
 }

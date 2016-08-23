@@ -138,7 +138,7 @@ func run(args Params) {
 	cancel := make(chan bool)
 	defer close(cancel)
 
-	for p := range process.Runner(cmds, args.Retry, cancel) {
+	for p := range process.Runner(cmds, args.Retry, args.Ordered, cancel) {
 		if ex := p.ExitCode(); ex != 0 {
 			ExitCode = max(ExitCode, ex)
 			if !args.ContinueOnError {
