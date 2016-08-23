@@ -23,7 +23,7 @@ assert_equal 4 $(grep -c sleep $STDOUT_FILE)
 
 fn_check_sep() {
 	set -o pipefail
-	cat tests/t.txt | ./gargs_race $ORDERED --sep "\s+" -p 2 "echo -e '{0}:{1}-{2}' full-line: \'{}\'"
+	cat tests/t.txt | ./gargs_race $ORDERED -p 2 "echo -e '{0}:{1}-{2}' full-line: \'{}\'"
 }
 run check_sep fn_check_sep
 assert_exit_code 0
@@ -84,4 +84,21 @@ run check_retries fn_check_retries
 assert_exit_code 1
 assert_equal $(grep -c ZeroDivisionError $STDERR_FILE) "4"
 
+fn_check_nlines2() {
+	seq 1 10 | ./gargs_race -n 5  "echo {} blah"
+}
 
+# we did 5 per so we should have 2 lines.
+run check_nlines2 fn_check_nlines2
+assert_exit_code 0
+assert_equal $(cat $STDOUT_FILE | wc -l) 2
+
+fn_check_nlines4() {
+	seq 1 10 | ./gargs_race --dry-run -n 3  "{}"
+}
+
+run check_nlines4 fn_check_nlines4
+assert_exit_code 0
+assert_equal $(cat $STDOUT_FILE | wc -l) 4
+assert_in_stdout "7 8 9"
+assert_equal $(grep -c "^10$" $STDOUT_FILE) 1

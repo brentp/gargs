@@ -88,6 +88,20 @@ if we do something time-consuming rather than `echo`.
 
 Note that `{0}`, `{1}`, etc. grab the 1st, 2nd, ... values respectively. To get the entire line, use `{}`.
 
+We can use `-n` to send multiple lines of input to each process:
+
+```
+$ seq 1 10 | gargs -n 4 "echo {}"
+1 2 3 4
+5 6 7 8
+9 10
+```
+
+Note that even though we send 4 arguments, we only specify the place-holder `{}` once.
+Also it does the right thing (tm) for the last line where there are only 2 values (9, 10).
+This works as long as the program accepting the arguments doesn't required a fixed number.
+
+
 Usage
 =====
 
@@ -104,7 +118,9 @@ options:
                          number of processes to use [default: 1]
   --nlines NLINES, -n NLINES
                          number of lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
+						 e.g. seq 1 4 | gargs -n 4 "echo {}" will print '1 2 3 4' all on one line. Like a varargs for gargs
   --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
+                         If neither -s or -n are specified then -s will default to '\s+' (split on any white-space)
   --retry RETRY, -r RETRY
                          number of times to retry a command if it fails (default is 0).
   --verbose, -v          print commands to stderr before they are executed.

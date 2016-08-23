@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the current version
-const Version = "0.3.2"
+const Version = "0.3.3"
 
 // ExitCode is the highest exit code seen in any command
 var ExitCode = 0
@@ -32,13 +32,12 @@ type Params struct {
 	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
 	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
-	Ordered         bool   `arg:"-o,help:keep output in order of input at cost of reduced parallelization; default is to output in order of return."`
 	DryRun          bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
 }
 
 // hold the arguments for each call that fill the template.
 type tmplArgs struct {
-	Lines []string
+	Lines string
 	Xs    []string
 }
 
@@ -47,6 +46,10 @@ func main() {
 	p := arg.MustParse(&args)
 	if args.Sep != "" && args.Nlines > 1 {
 		p.Fail("must specify either sep (-s) or n-lines (-n), not both")
+	}
+	// if neither is specified then we default to whitespace
+	if args.Nlines == 1 && args.Sep == "" {
+		args.Sep = "\\s+"
 	}
 	if !xopen.IsStdin() {
 		fmt.Fprintln(os.Stderr, "ERROR: expecting input on STDIN")
@@ -94,7 +97,7 @@ func genCommands(args *Params, tmpl *template.Template) <-chan string {
 				line = re.ReplaceAllString(line, "")
 				if resep != nil {
 					toks := resep.Split(line, -1)
-					check(tmpl.Execute(&buf, &tmplArgs{Xs: toks, Lines: []string{line}}))
+					check(tmpl.Execute(&buf, &tmplArgs{Xs: toks, Lines: line}))
 					handleCommand(args, buf.String(), ch)
 				} else {
 					lines = append(lines, line)
@@ -106,13 +109,13 @@ func genCommands(args *Params, tmpl *template.Template) <-chan string {
 				log.Fatal(err)
 			}
 			if len(lines) == args.Nlines {
-				check(tmpl.Execute(&buf, &tmplArgs{Lines: lines, Xs: lines}))
+				check(tmpl.Execute(&buf, &tmplArgs{Lines: strings.Join(lines, " "), Xs: lines}))
 				lines = lines[:0]
 				handleCommand(args, buf.String(), ch)
 			}
 		}
 		if len(lines) > 0 {
-			check(tmpl.Execute(&buf, &tmplArgs{Lines: lines, Xs: lines}))
+			check(tmpl.Execute(&buf, &tmplArgs{Lines: strings.Join(lines, " "), Xs: lines}))
 			handleCommand(args, buf.String(), ch)
 		}
 		close(ch)
@@ -151,12 +154,11 @@ func run(args Params) {
 }
 
 func makeCommandTmpl(cmd string) *template.Template {
-	v := strings.Replace(cmd, "{}", "{{index .Lines 0}}", -1)
+	v := strings.Replace(cmd, "{}", "{{.Lines}}", -1)
 	re := regexp.MustCompile(`({\d+})`)
 	v = re.ReplaceAllStringFunc(v, func(match string) string {
 		return "{{index .Xs " + match[1:len(match)-1] + "}}"
 	})
-
 	tmpl, err := template.New(v).Parse(v)
 	check(err)
 	return tmpl
