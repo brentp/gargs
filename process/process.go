@@ -154,9 +154,8 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Comma
 			defer wg.Done()
 			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
-				v := Run(cmdStr, retries)
 				select {
-				case stdout <- v:
+				case stdout <- Run(cmdStr, retries):
 				// if we receive from this, we must exit.
 				// receive from closed channel will continually yield false
 				// so it does what we expect.
