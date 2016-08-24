@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // BufferSize determines how much output will be read into memory before resorting to using a temporary file
@@ -31,9 +32,10 @@ func getShell() string {
 // Command contains a buffered reader with the realized stdout of the process along with the exit code.
 type Command struct {
 	*bufio.Reader
-	tmpName string
-	Err     error
-	cmd     string
+	tmpName  string
+	Err      error
+	cmd      string
+	Duration time.Duration
 }
 
 func (c *Command) error() string {
@@ -43,14 +45,29 @@ func (c *Command) error() string {
 	return c.Err.Error()
 }
 
+// String returns a representation of the command that includes run-time, error (if any) and the first 20 chars of stdout.
 func (c *Command) String() string {
 	cmd := c.cmd
 	if len(c.cmd) > 100 {
 		cmd = cmd[:80] + "..."
 	}
 	out, _ := c.Peek(20)
-	return fmt.Sprintf("Command('%s', output[:20]: %s, exit-code: %d, error: %s)",
-		cmd, strings.Replace(string(out), "\n", "\\n", -1), c.ExitCode(), c.error())
+	prompt := ", stdout[:20]: "
+	if len(out) < 20 {
+		prompt = "stdout: "
+	}
+	prompt += fmt.Sprintf("'%s'", strings.Replace(string(out), "\n", "\\n", -1))
+	errString := ""
+	if e := c.error(); e != "" {
+		errString = fmt.Sprintf(", error: %s", e)
+	}
+	exString := ""
+	if ex := c.ExitCode(); ex != 0 {
+		exString = fmt.Sprintf(", exit-code: %d", ex)
+	}
+
+	return fmt.Sprintf("Command('%s', %s%s%s, run-time: %s)",
+		cmd, prompt, exString, errString, c.Duration)
 }
 
 // ExitCode returns the exit code associated with a given error
@@ -71,7 +88,7 @@ func cleanup(c *Command) {
 }
 
 func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Command {
-	c := &Command{rdr, tmpName, err, cmd}
+	c := &Command{rdr, tmpName, err, cmd, 0}
 	if tmpName != "" {
 		runtime.SetFinalizer(c, cleanup)
 	}
@@ -83,11 +100,13 @@ func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Comma
 // that is an io.Reader. If retries > 0 it will retry on a
 // non-zero exit-code.
 func Run(command string, retries int) *Command {
+	t := time.Now()
 	c := oneRun(command)
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
 		c = oneRun(command)
 	}
+	c.Duration = time.Since(t)
 	return c
 }
 

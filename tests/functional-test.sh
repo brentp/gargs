@@ -8,18 +8,16 @@ set -e
 
 go build -o gargs_race -race -a
 
-
-
 set +e
 
 fn_check_basic() {
-	seq 12 -1 1 | ./gargs_race $ORDERED -p 5 -n 3 -d  -v 'sleep {0}; echo {1} {2}'
+	seq 12 -1 1 | ./gargs_race $ORDERED -p 5 -n 3 -v 'sleep {0}; echo {1} {2}'
 }
 run check_basic fn_check_basic
 assert_exit_code 0
-assert_in_stderr 'command:'
+assert_in_stderr 'Command('
 assert_equal 4 $(wc -l $STDOUT_FILE)
-assert_equal 4 $(grep -c sleep $STDOUT_FILE)
+assert_equal 4 $(grep -c sleep $STDERR_FILE)
 
 fn_check_sep() {
 	set -o pipefail

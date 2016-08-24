@@ -15,10 +15,12 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/brentp/gargs/process"
 	"github.com/brentp/xopen"
+	"github.com/fatih/color"
+	isatty "github.com/mattn/go-isatty"
 )
 
 // Version is the current version
-const Version = "0.3.3"
+const Version = "0.3.4-dev"
 
 // ExitCode is the highest exit code seen in any command
 var ExitCode = 0
@@ -41,6 +43,16 @@ type tmplArgs struct {
 	Xs    []string
 }
 
+// isStdin checks if we are getting data from stdin.
+func isStdin() bool {
+	// http://stackoverflow.com/a/26567513
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) == 0
+}
+
 func main() {
 	args := Params{Procs: 1, Nlines: 1}
 	p := arg.MustParse(&args)
@@ -51,8 +63,8 @@ func main() {
 	if args.Nlines == 1 && args.Sep == "" {
 		args.Sep = "\\s+"
 	}
-	if !xopen.IsStdin() {
-		fmt.Fprintln(os.Stderr, "ERROR: expecting input on STDIN")
+	if !isStdin() {
+		fmt.Fprintln(os.Stderr, color.RedString("ERROR: expecting input on STDIN"))
 		os.Exit(255)
 	}
 	runtime.GOMAXPROCS(args.Procs)
@@ -67,9 +79,6 @@ func check(e error) {
 }
 
 func handleCommand(args *Params, cmd string, ch chan string) {
-	if args.Verbose {
-		fmt.Fprintf(os.Stderr, "command: %s\n", cmd)
-	}
 	if args.DryRun {
 		fmt.Fprintf(os.Stdout, "%s\n", cmd)
 		return
@@ -130,6 +139,10 @@ func max(a, b int) int {
 	return b
 }
 
+func init() {
+	color.NoColor = !isatty.IsTerminal(os.Stderr.Fd())
+}
+
 func run(args Params) {
 
 	tmpl := makeCommandTmpl(args.Command)
@@ -143,10 +156,15 @@ func run(args Params) {
 
 	for p := range process.Runner(cmds, args.Retry, cancel) {
 		if ex := p.ExitCode(); ex != 0 {
+			c := color.New(color.BgRed).Add(color.Bold)
+			fmt.Fprintf(os.Stderr, "%s\n", c.SprintFunc()(fmt.Sprintf("ERROR with command: %s", p)))
 			ExitCode = max(ExitCode, ex)
 			if !args.ContinueOnError {
 				break
 			}
+		}
+		if args.Verbose {
+			fmt.Fprintf(os.Stderr, "%s\n", p)
 		}
 		io.Copy(stdout, p)
 	}

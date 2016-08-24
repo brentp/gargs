@@ -1,7 +1,7 @@
 <!--
 rm -rf binaries
 mkdir -p binaries/
-VERSION=0.3.1
+VERSION=0.3.3
 for os in darwin linux windows; do
 	GOOS=$os GOARCH=$arch go build -o binaries/gargs_${os} main.go
 done
