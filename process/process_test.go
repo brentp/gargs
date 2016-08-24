@@ -12,7 +12,7 @@ import (
 func TestLongOutput(t *testing.T) {
 	// make sure we we test the buffer output.
 	cmdStr := "seq 999999"
-	cmd := process.Run(cmdStr)
+	cmd := process.Run(cmdStr, 0)
 	if cmd.Err != nil {
 		t.Fatal(cmd.Err)
 	}
@@ -22,7 +22,7 @@ func TestLongOutput(t *testing.T) {
 func TestSigPipe(t *testing.T) {
 	// make sure we we test the buffer output.
 	cmdStr := "seq 999999 | head"
-	cmd := process.Run(cmdStr)
+	cmd := process.Run(cmdStr, 1)
 	if cmd.Err != nil {
 		t.Fatal(cmd.Err)
 	}
@@ -33,7 +33,7 @@ func TestValidCommand(t *testing.T) {
 
 	cmdStr := "go version"
 
-	cmd := process.Run(cmdStr)
+	cmd := process.Run(cmdStr, 1)
 	if cmd.Err != nil && cmd.Err != io.EOF {
 		t.Fatal(cmd.Err)
 	}
@@ -56,7 +56,7 @@ func TestInvalidCommand(t *testing.T) {
 
 	cmdStr := "XXXXXX go version"
 
-	cmd := process.Run(cmdStr)
+	cmd := process.Run(cmdStr, 0)
 	if cmd.Err == nil {
 		t.Fatalf("expected error with cmd %s", cmd.Err)
 	}

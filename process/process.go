@@ -80,8 +80,18 @@ func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Comma
 
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
-// that is an io.Reader
-func Run(command string) *Command {
+// that is an io.Reader. If retries > 0 it will retry on a
+// non-zero exit-code.
+func Run(command string, retries int) *Command {
+	c := oneRun(command)
+	for retries > 0 && c.ExitCode() != 0 {
+		retries--
+		c = oneRun(command)
+	}
+	return c
+}
+
+func oneRun(command string) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
 
@@ -144,13 +154,7 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Comma
 			defer wg.Done()
 			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
-				var v *Command
-				for k := 0; k < retries+1; k++ {
-					v = Run(cmdStr)
-					if v.ExitCode() == 0 {
-						break
-					}
-				}
+				v := Run(cmdStr, retries)
 				select {
 				case stdout <- v:
 				// if we receive from this, we must exit.
