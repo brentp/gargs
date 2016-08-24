@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/alexflint/go-arg"
 	"github.com/brentp/gargs/process"
@@ -153,6 +154,20 @@ func run(args Params) {
 
 	cancel := make(chan bool)
 	defer close(cancel)
+
+	// flush stdout every 2 seconds.
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		for {
+			select {
+			case <-ticker.C:
+				stdout.Flush()
+			case <-cancel:
+				ticker.Stop()
+				break
+			}
+		}
+	}()
 
 	for p := range process.Runner(cmds, args.Retry, cancel) {
 		if ex := p.ExitCode(); ex != 0 {
