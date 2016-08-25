@@ -156,19 +156,7 @@ func run(args Params) {
 	defer close(cancel)
 
 	// flush stdout every 2 seconds.
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		for {
-			select {
-			case <-ticker.C:
-				stdout.Flush()
-			case <-cancel:
-				ticker.Stop()
-				break
-			}
-		}
-	}()
-
+	last := time.Now().Add(2 * time.Second)
 	for p := range process.Runner(cmds, args.Retry, cancel) {
 		if ex := p.ExitCode(); ex != 0 {
 			c := color.New(color.BgRed).Add(color.Bold)
@@ -182,6 +170,10 @@ func run(args Params) {
 			fmt.Fprintf(os.Stderr, "%s\n", p)
 		}
 		io.Copy(stdout, p)
+		if t := time.Now(); t.After(last) {
+			stdout.Flush()
+			last = t.Add(2 * time.Second)
+		}
 	}
 
 }
