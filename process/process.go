@@ -21,6 +21,9 @@ const BufferSize = 1048576
 // UnknownExit is used when the return/exit-code of the command is not known.
 const UnknownExit = 1
 
+// prefix for tmp files.
+var prefix = fmt.Sprintf("gargs.%d.", os.Getpid())
+
 func getShell() string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
@@ -51,14 +54,6 @@ func (c *Command) Close() error {
 		return nil
 	}
 	return c.tmp.Close()
-}
-
-// Cleanup makes sure the tempfile is closed an deleted.
-func (c *Command) Cleanup() {
-	if c.tmp != nil {
-		c.Close()
-		cleanup(c)
-	}
 }
 
 // String returns a representation of the command that includes run-time, error (if any) and the first 20 chars of stdout.
@@ -99,6 +94,14 @@ func (c *Command) ExitCode() int {
 	return UnknownExit
 }
 
+// Cleanup makes sure the tempfile is closed an deleted.
+func (c *Command) Cleanup() {
+	if c.tmp != nil {
+		c.Close()
+		cleanup(c)
+	}
+}
+
 func cleanup(c *Command) {
 	c.tmp.Close()
 	os.Remove(c.tmp.Name())
@@ -111,8 +114,6 @@ func newCommand(rdr *bufio.Reader, tmp *os.File, cmd string, err error) *Command
 	}
 	return c
 }
-
-var prefix = fmt.Sprintf("gargs.%d.", os.Getpid())
 
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
