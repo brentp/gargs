@@ -169,7 +169,11 @@ func run(args Params) {
 		if args.Verbose {
 			fmt.Fprintf(os.Stderr, "%s\n", p)
 		}
-		io.Copy(stdout, p)
+		_, err := io.Copy(stdout, p)
+		if err != nil {
+			panic(err)
+		}
+		p.Cleanup()
 		if t := time.Now(); t.After(last) {
 			stdout.Flush()
 			last = t.Add(2 * time.Second)

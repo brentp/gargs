@@ -32,7 +32,7 @@ func getShell() string {
 // Command contains a buffered reader with the realized stdout of the process along with the exit code.
 type Command struct {
 	*bufio.Reader
-	tmpName  string
+	tmp      *os.File
 	Err      error
 	cmd      string
 	Duration time.Duration
@@ -43,6 +43,22 @@ func (c *Command) error() string {
 		return ""
 	}
 	return c.Err.Error()
+}
+
+// Close the temp file associated with the command
+func (c *Command) Close() error {
+	if c.tmp == nil {
+		return nil
+	}
+	return c.tmp.Close()
+}
+
+// Cleanup makes sure the tempfile is closed an deleted.
+func (c *Command) Cleanup() {
+	if c.tmp != nil {
+		c.Close()
+		cleanup(c)
+	}
 }
 
 // String returns a representation of the command that includes run-time, error (if any) and the first 20 chars of stdout.
@@ -84,16 +100,19 @@ func (c *Command) ExitCode() int {
 }
 
 func cleanup(c *Command) {
-	os.Remove(c.tmpName)
+	c.tmp.Close()
+	os.Remove(c.tmp.Name())
 }
 
-func newCommand(rdr *bufio.Reader, tmpName string, cmd string, err error) *Command {
-	c := &Command{rdr, tmpName, err, cmd, 0}
-	if tmpName != "" {
+func newCommand(rdr *bufio.Reader, tmp *os.File, cmd string, err error) *Command {
+	c := &Command{rdr, tmp, err, cmd, 0}
+	if tmp != nil {
 		runtime.SetFinalizer(c, cleanup)
 	}
 	return c
 }
+
+var prefix = fmt.Sprintf("gargs.%d.", os.Getpid())
 
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
@@ -116,7 +135,7 @@ func oneRun(command string) *Command {
 
 	opipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return newCommand(nil, "", command, err)
+		return newCommand(nil, nil, command, err)
 	}
 	defer opipe.Close()
 
@@ -124,37 +143,41 @@ func oneRun(command string) *Command {
 
 	err = cmd.Start()
 	if err != nil {
-		return newCommand(nil, "", command, err)
+		return newCommand(nil, nil, command, err)
 	}
 
 	bpipe := bufio.NewReaderSize(opipe, BufferSize)
+
 	var res []byte
 	res, err = bpipe.Peek(BufferSize)
 
 	// less than BufferSize bytes in output...
 	if err == bufio.ErrBufferFull || err == io.EOF {
 		err = cmd.Wait()
-		return newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), nil, command, err)
 	}
 	if err != nil {
-		return newCommand(nil, "", command, err)
+		return newCommand(nil, nil, command, err)
 	}
 
 	// more than BufferSize bytes in output. must use tmpfile
 	var tmp *os.File
-	tmp, err = ioutil.TempFile("", "gargsTmp.")
+	tmp, err = ioutil.TempFile("", prefix)
 	if err != nil {
-		return newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), tmp, command, err)
 	}
 	btmp := bufio.NewWriter(tmp)
 	_, err = io.CopyBuffer(btmp, bpipe, res)
 	if err != nil {
-		return newCommand(bufio.NewReader(bytes.NewReader(res)), "", command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), tmp, command, err)
 	}
-	err = opipe.Close()
+	opipe.Close()
 	btmp.Flush()
 	_, err = tmp.Seek(0, 0)
-	return newCommand(bufio.NewReader(tmp), tmp.Name(), command, err)
+	if err == nil {
+		err = cmd.Wait()
+	}
+	return newCommand(bufio.NewReader(tmp), tmp, command, err)
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
@@ -179,6 +202,7 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Comma
 				// receive from closed channel will continually yield false
 				// so it does what we expect.
 				case <-cancel:
+					close(stdout)
 					return
 				}
 			}
