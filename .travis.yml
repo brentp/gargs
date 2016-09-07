@@ -6,6 +6,9 @@ os:
 
 go:
   - 1.7
+before_install:
+    - go get github.com/valyala/fasttemplate
+
 
 script:
     - ./tests/functional-test.sh

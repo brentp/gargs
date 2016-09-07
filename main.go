@@ -9,15 +9,15 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/alexflint/go-arg"
 	"github.com/brentp/gargs/process"
-	"github.com/brentp/xopen"
 	"github.com/fatih/color"
 	isatty "github.com/mattn/go-isatty"
+	"github.com/valyala/fasttemplate"
 )
 
 // Version is the current version
@@ -36,12 +36,6 @@ type Params struct {
 	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
 	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
 	DryRun          bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
-}
-
-// hold the arguments for each call that fill the template.
-type tmplArgs struct {
-	Lines string
-	Xs    []string
 }
 
 // isStdin checks if we are getting data from stdin.
@@ -87,45 +81,92 @@ func handleCommand(args *Params, cmd string, ch chan string) {
 	ch <- cmd
 }
 
-func genCommands(args *Params, tmpl *template.Template) <-chan string {
+func fillTmplMap(toks []string, line string) map[string]interface{} {
+	m := make(map[string]interface{}, 5)
+	if toks != nil {
+		for i, t := range toks {
+			m[strconv.FormatInt(int64(i), 10)] = t
+		}
+	}
+	m["Line"] = line
+	return m
+}
+
+func getScanner() *bufio.Scanner {
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 0, 16384), 5e9)
+	//if rs := os.Getenv("RS"); rs != "" && rs != "\n" && rs != "\r\n" {
+	if rs := os.Getenv("RS"); rs != "" {
+		brs := []byte(rs)
+		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+			if atEOF && len(data) == 0 {
+				return 0, nil, nil
+			}
+			if i := bytes.Index(data, brs); i >= 0 {
+				// Note that by adding the length here, we include the delimiter.
+				return i + 1, data[:i+len(brs)], nil
+			}
+			if atEOF {
+				return len(data), data, nil
+			}
+			return 0, nil, nil
+		})
+	}
+	return scanner
+}
+
+func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 	ch := make(chan string)
 	var resep *regexp.Regexp
 	if args.Sep != "" {
 		resep = regexp.MustCompile(args.Sep)
 	}
-	rdr, err := xopen.Ropen("-")
-	check(err)
+
+	scanner := getScanner()
+	fs := os.Getenv("FS")
+	if fs == "" {
+		fs = " "
+	}
 
 	go func() {
-		re := regexp.MustCompile(`\r?\n`)
-		lines := make([]string, 0, args.Nlines)
+		var lines []string
+		if resep == nil {
+			lines = make([]string, 0, args.Nlines)
+		}
 		var buf bytes.Buffer
-		for {
+		for scanner.Scan() {
 			buf.Reset()
-			line, err := rdr.ReadString('\n')
-			if err == nil || (err == io.EOF && len(line) > 0) {
-				line = re.ReplaceAllString(line, "")
+			line := scanner.Text()
+			serr := scanner.Err()
+			if serr == nil || (serr == io.EOF && len(line) > 0) {
+				// TODO: make dropping bytes optional.
 				if resep != nil {
 					toks := resep.Split(line, -1)
-					check(tmpl.Execute(&buf, &tmplArgs{Xs: toks, Lines: line}))
+					targs := fillTmplMap(toks, line)
+					_, err := tmpl.Execute(&buf, targs)
+					check(err)
 					handleCommand(args, buf.String(), ch)
 				} else {
 					lines = append(lines, line)
 				}
 			} else {
-				if err == io.EOF {
+				if serr == io.EOF {
 					break
 				}
-				log.Fatal(err)
+				log.Fatal(serr)
 			}
-			if len(lines) == args.Nlines {
-				check(tmpl.Execute(&buf, &tmplArgs{Lines: strings.Join(lines, " "), Xs: lines}))
+			if len(lines) >= args.Nlines {
+				targs := fillTmplMap(lines, strings.Join(lines, fs))
+				_, err := tmpl.Execute(&buf, targs)
+				check(err)
 				lines = lines[:0]
 				handleCommand(args, buf.String(), ch)
 			}
 		}
 		if len(lines) > 0 {
-			check(tmpl.Execute(&buf, &tmplArgs{Lines: strings.Join(lines, " "), Xs: lines}))
+			targs := fillTmplMap(lines, strings.Join(lines, fs))
+			_, err := tmpl.Execute(&buf, targs)
+			check(err)
 			handleCommand(args, buf.String(), ch)
 		}
 		close(ch)
@@ -182,13 +223,7 @@ func run(args Params) {
 
 }
 
-func makeCommandTmpl(cmd string) *template.Template {
-	v := strings.Replace(cmd, "{}", "{{.Lines}}", -1)
-	re := regexp.MustCompile(`({\d+})`)
-	v = re.ReplaceAllStringFunc(v, func(match string) string {
-		return "{{index .Xs " + match[1:len(match)-1] + "}}"
-	})
-	tmpl, err := template.New(v).Parse(v)
-	check(err)
-	return tmpl
+func makeCommandTmpl(cmd string) *fasttemplate.Template {
+	v := strings.Replace(cmd, "{}", "{Line}", -1)
+	return fasttemplate.New(v, "{", "}")
 }
