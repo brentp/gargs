@@ -37,7 +37,7 @@ type Command struct {
 	*bufio.Reader
 	tmp      *os.File
 	Err      error
-	cmd      string
+	CmdStr   string
 	Duration time.Duration
 }
 
@@ -58,8 +58,8 @@ func (c *Command) Close() error {
 
 // String returns a representation of the command that includes run-time, error (if any) and the first 20 chars of stdout.
 func (c *Command) String() string {
-	cmd := c.cmd
-	if len(c.cmd) > 100 {
+	cmd := c.CmdStr
+	if len(c.CmdStr) > 100 {
 		cmd = cmd[:80] + "..."
 	}
 	out, _ := c.Peek(20)

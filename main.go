@@ -28,14 +28,16 @@ var ExitCode = 0
 
 // Params are the user-specified command-line arguments
 type Params struct {
-	Procs       int    `arg:"-p,help:number of processes to use."`
-	Nlines      int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
-	Retry       int    `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
-	Command     string `arg:"positional,required,help:command to execute."`
-	Sep         string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
-	Verbose     bool   `arg:"-v,help:print commands to stderr before they are executed."`
-	StopOnError bool   `arg:"-s,--stop-on-error,help:stop execution on any error. default is to report errors and continue execution."`
-	DryRun      bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
+	Procs       int      `arg:"-p,help:number of processes to use."`
+	Nlines      int      `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
+	Retry       int      `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
+	Sep         string   `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
+	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
+	StopOnError bool     `arg:"-s,--stop-on-error,help:stop execution on any error. default is to report errors and continue execution."`
+	DryRun      bool     `arg:"-d,--dry-run,help:print (but do not run) the commands."`
+	Log         string   `arg:"-l,--log,help:file to log commands. Successful commands are prefixed with '#'."`
+	Command     string   `arg:"positional,required,help:command to execute."`
+	log         *os.File `arg:"-"`
 }
 
 // isStdin checks if we are getting data from stdin.
@@ -61,6 +63,11 @@ func main() {
 	if !isStdin() {
 		fmt.Fprintln(os.Stderr, color.RedString("ERROR: expecting input on STDIN"))
 		os.Exit(255)
+	}
+	if args.Log != "" {
+		var err error
+		args.log, err = os.Create(args.Log)
+		check(err)
 	}
 	runtime.GOMAXPROCS(args.Procs)
 	run(args)
@@ -195,6 +202,7 @@ func run(args Params) {
 
 	cancel := make(chan bool)
 	defer close(cancel)
+	fails := 0
 
 	// flush stdout every 2 seconds.
 	last := time.Now().Add(2 * time.Second)
@@ -203,6 +211,7 @@ func run(args Params) {
 			c := color.New(color.BgRed).Add(color.Bold)
 			fmt.Fprintf(os.Stderr, "%s\n", c.SprintFunc()(fmt.Sprintf("ERROR with command: %s", p)))
 			ExitCode = max(ExitCode, ex)
+			fails++
 			if args.StopOnError {
 				break
 			}
@@ -211,14 +220,28 @@ func run(args Params) {
 			fmt.Fprintf(os.Stderr, "%s\n", p)
 		}
 		_, err := io.Copy(stdout, p)
-		if err != nil {
-			panic(err)
-		}
+		check(err)
+
 		p.Cleanup()
 		if t := time.Now(); t.After(last) {
 			stdout.Flush()
 			last = t.Add(2 * time.Second)
 		}
+		if args.log != nil {
+			// if no error prefix the command with '#'
+			if p.ExitCode() == 0 {
+				args.log.WriteString("# " + strings.Replace(p.CmdStr, "\n", "\n# ", -1) + "\n")
+			} else {
+				args.log.WriteString(p.CmdStr + "\n")
+			}
+			stdout.Flush()
+		}
+	}
+	stdout.Flush()
+	if ExitCode == 0 && args.log != nil {
+		args.log.WriteString("# SUCCESS\n")
+	} else if args.log != nil {
+		fmt.Fprintf(args.log, "# FAILED %d commands\n", fails)
 	}
 
 }

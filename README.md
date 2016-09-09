@@ -19,7 +19,8 @@ Work In Progress:
 + easy to specify multiple arguments with number blocks ({0}, {1}, ...) and {} indicates the entire line.
 + easy to use multiple lines to fill command-template.
 + easy to --retry each command if it fails (e.g. due to network or other intermittent error)
-+ it defaults to exiting all commands when an error in one of them occurs.
++ allows exiting all commands when an error in one of them occurs.
++ optionally logs all commands with successful commands prefixed by '#' so it's easy to find failed commands.
 + simple implementation.
 + expects a $SHELL command as the argument rather than requiring `bash -c ...`
 
@@ -27,7 +28,7 @@ Work In Progress:
 An very simple example usage with 4 processes to echo some numbers:
 
 ```
-$ seq 5 | gargs -p 4 "echo {0}"
+$ seq 5 | gargs --log my.log -p 4 "echo {0}"
 1
 2
 3
@@ -35,7 +36,9 @@ $ seq 5 | gargs -p 4 "echo {0}"
 5
 ```
 
-
+my.log will contain the commands run and a final line '# SUCCESS' that shows all processes finished
+without error. This makes it easy to assure that all commands ran without error even if the user
+didn't catch the exit code of the command.
 
 Install
 =======
@@ -108,29 +111,26 @@ Usage
 via `gargs -h`
 
 ```
-usage: main [--procs PROCS] [--nlines NLINES] [--sep SEP] [--verbose] [--continue-on-error] [--dry-run] COMMAND
+usage: gargs [--procs PROCS] [--nlines NLINES] [--retry RETRY] [--sep SEP] [--verbose] [--stop-on-error] [--dry-run] [--log LOG] COMMAND
 
 positional arguments:
-  command                command to execute
+  command                command to execute.
 
 options:
   --procs PROCS, -p PROCS
-                         number of processes to use [default: 1]
+                         number of processes to use. [default: 1]
   --nlines NLINES, -n NLINES
                          number of lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
-						 e.g. seq 1 4 | gargs -n 4 "echo {}" will print '1 2 3 4' all on one line. Like a varargs for gargs
-  --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
-                         If neither -s or -n are specified then -s will default to '\s+' (split on any white-space)
   --retry RETRY, -r RETRY
                          number of times to retry a command if it fails (default is 0).
-  --verbose, -v          print commands to stderr before they are executed.
-  --continue-on-error, -c
-                         report errors but don't stop the entire execution (which is the default).
-  --dry-run, -d          print (but do not run) the commands
+  --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
+  --verbose, -v          print commands to stderr as they are executed.
+  --stop-on-error, -s    stop execution on any error. default is to report errors and continue execution.
+  --dry-run, -d          print (but do not run) the commands.
+  --log LOG, -l LOG      file to log commands. Successful commands are prefixed with '#'.
   --help, -h             display this help and exit
 ```
 
-**NOTE** that the default is to stop on the first error. Use `-c` to continue on an error.
 
 API
 ===

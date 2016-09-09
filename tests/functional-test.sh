@@ -6,7 +6,7 @@ test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest
 set -e
 
 
-go build -o gargs_race -race -a
+go build -o gargs_race -race
 
 set +e
 
@@ -18,6 +18,35 @@ assert_exit_code 0
 assert_in_stderr 'Command('
 assert_equal 4 $(wc -l $STDOUT_FILE)
 assert_equal 4 $(grep -c sleep $STDERR_FILE)
+
+fn_check_log() {
+	seq 3 -1 0 | ./gargs_race -l __o.log "python -c 'print 1/{}'"
+}
+
+fn_check_logok() {
+	seq 1 3 | ./gargs_race -l __o.log "python -c 'print 1/{}'"
+}
+fn_check_loghead() {
+	seq 1 100 | ./gargs_race -l __o.log "echo {}" | head
+}
+
+run check_log fn_check_log
+assert_exit_code 1
+assert_equal 5 $(cat __o.log | wc -l)
+assert_equal 4 $(grep -c ^# __o.log)
+assert_equal 1 $(grep -c "^python -c 'print 1/0'" __o.log)
+assert_equal 1 $(grep -c "^# FAILED 1 commands" __o.log)
+rm -f __o.log
+
+run check_log_ok fn_check_logok
+assert_exit_code 0
+assert_equal 1 $(grep -c "^# SUCCESS" __o.log)
+rm -f __o.log
+
+# make sure we dont print success even if everything didn't finish.
+run check_log_head fn_check_loghead
+assert_equal 0 $(grep -c "^# SUCCESS" __o.log)
+rm -f __o.log
 
 fn_check_sep() {
 	set -o pipefail
