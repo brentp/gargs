@@ -28,14 +28,14 @@ var ExitCode = 0
 
 // Params are the user-specified command-line arguments
 type Params struct {
-	Procs           int    `arg:"-p,help:number of processes to use."`
-	Nlines          int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
-	Retry           int    `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
-	Command         string `arg:"positional,required,help:command to execute."`
-	Sep             string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
-	Verbose         bool   `arg:"-v,help:print commands to stderr before they are executed."`
-	ContinueOnError bool   `arg:"-c,--continue-on-error,help:report errors but don't stop the entire execution (which is the default)."`
-	DryRun          bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
+	Procs       int    `arg:"-p,help:number of processes to use."`
+	Nlines      int    `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
+	Retry       int    `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
+	Command     string `arg:"positional,required,help:command to execute."`
+	Sep         string `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
+	Verbose     bool   `arg:"-v,help:print commands to stderr before they are executed."`
+	StopOnError bool   `arg:"-s,--stop-on-error,help:stop execution on any error. default is to report errors and continue execution."`
+	DryRun      bool   `arg:"-d,--dry-run,help:print (but do not run) the commands"`
 }
 
 // isStdin checks if we are getting data from stdin.
@@ -203,7 +203,7 @@ func run(args Params) {
 			c := color.New(color.BgRed).Add(color.Bold)
 			fmt.Fprintf(os.Stderr, "%s\n", c.SprintFunc()(fmt.Sprintf("ERROR with command: %s", p)))
 			ExitCode = max(ExitCode, ex)
-			if !args.ContinueOnError {
+			if args.StopOnError {
 				break
 			}
 		}

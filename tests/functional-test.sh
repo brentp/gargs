@@ -32,7 +32,7 @@ assert_in_stdout "chr4:22-33 full-line: 'chr4 22 33'"
 
 
 fn_check_exit_err(){
-	seq 0 5  | ./gargs_race $ORDERED -c -p 5 "python -c 'print 1.0/{}'"
+	seq 0 5  | ./gargs_race $ORDERED -p 5 "python -c 'print 1.0/{}'"
 }
 run check_exit_err fn_check_exit_err
 assert_exit_code 1
@@ -41,7 +41,7 @@ assert_in_stderr "ZeroDivisionError"
 
 
 fn_custom_shell(){
-	seq 0 5 | SHELL=python ./gargs_race $ORDERED -c "print '%.2f' % {}"
+	seq 0 5 | SHELL=python ./gargs_race $ORDERED "print '%.2f' % {}"
 }
 run check_custom_shell fn_custom_shell
 assert_exit_code 0
