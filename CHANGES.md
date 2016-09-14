@@ -1,3 +1,7 @@
+0.3.6 (dev)
+=====
++ output gargs version in help.
+
 0.3.4
 =====
 

@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current version
-const Version = "0.3.5"
+const Version = "0.3.6"
 
 // ExitCode is the highest exit code seen in any command
 var ExitCode = 0
@@ -38,6 +38,11 @@ type Params struct {
 	Log         string   `arg:"-l,--log,help:file to log commands. Successful commands are prefixed with '#'."`
 	Command     string   `arg:"positional,required,help:command to execute."`
 	log         *os.File `arg:"-"`
+}
+
+// Version string for go-args
+func (p Params) Version() string {
+	return "gargs " + Version
 }
 
 // isStdin checks if we are getting data from stdin.
