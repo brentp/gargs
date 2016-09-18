@@ -115,30 +115,56 @@ func newCommand(rdr *bufio.Reader, tmp *os.File, cmd string, err error) *Command
 	return c
 }
 
+// CallBack is an optional function the user can provide to process the
+// stdout stream of the called Command. The user is responsible for closing
+// the io.Writer
+type CallBack func(io.Reader, io.WriteCloser) error
+
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
 // that is an io.Reader. If retries > 0 it will retry on a
-// non-zero exit-code.
-func Run(command string, retries int) *Command {
+// non-zero exit-code. If callback is non-nil, it will be executed
+// on the stream as it runs.
+func Run(command string, retries int, callback CallBack) *Command {
 	t := time.Now()
-	c := oneRun(command)
+	c := oneRun(command, callback)
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command)
+		c = oneRun(command, callback)
 	}
 	c.Duration = time.Since(t)
 	return c
 }
 
-func oneRun(command string) *Command {
+func oneRun(command string, callback CallBack) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
+	var opipe io.Reader
 
-	opipe, err := cmd.StdoutPipe()
+	spipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return newCommand(nil, nil, command, err)
 	}
-	defer opipe.Close()
+	defer spipe.Close()
+	var errch chan error
+	if callback != nil {
+		errch = make(chan error, 1)
+		rdr, wtr := io.Pipe()
+		go func() {
+			err := callback(spipe, wtr)
+			if err != nil {
+				errch <- err
+			}
+			close(errch)
+		}()
+
+		opipe = rdr
+	} else {
+		opipe = spipe
+	}
+	if err != nil {
+		return newCommand(nil, nil, command, err)
+	}
 
 	cmd.Stderr = os.Stderr
 
@@ -155,6 +181,11 @@ func oneRun(command string) *Command {
 	// less than BufferSize bytes in output...
 	if err == bufio.ErrBufferFull || err == io.EOF {
 		err = cmd.Wait()
+		if err == nil && callback != nil {
+			if e, ok := <-errch; ok {
+				err = e
+			}
+		}
 		return newCommand(bufio.NewReader(bytes.NewReader(res)), nil, command, err)
 	}
 	if err != nil {
@@ -172,19 +203,27 @@ func oneRun(command string) *Command {
 	if err != nil {
 		return newCommand(bufio.NewReader(bytes.NewReader(res)), tmp, command, err)
 	}
-	opipe.Close()
+	if c, ok := opipe.(io.ReadCloser); ok {
+		c.Close()
+	}
 	btmp.Flush()
 	_, err = tmp.Seek(0, 0)
 	if err == nil {
 		err = cmd.Wait()
+	}
+	if err == nil && callback != nil {
+		if e, ok := <-errch; ok {
+			err = e
+		}
 	}
 	return newCommand(bufio.NewReader(tmp), tmp, command, err)
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
 // done allows the caller to stop Runner, for example if an error occurs.
-// It will parallelize according to GOMAXPROCS.
-func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Command {
+// It will parallelize according to GOMAXPROCS. If a callback is specified, the user must
+// close the io.Writer before the function returns.
+func Runner(commands <-chan string, retries int, cancel <-chan bool, callback CallBack) chan *Command {
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
@@ -198,7 +237,7 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool) chan *Comma
 			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
 				select {
-				case stdout <- Run(cmdStr, retries):
+				case stdout <- Run(cmdStr, retries, callback):
 				// if we receive from this, we must exit.
 				// receive from closed channel will continually yield false
 				// so it does what we expect.

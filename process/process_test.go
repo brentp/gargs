@@ -2,7 +2,9 @@ package process_test
 
 import (
 	"bufio"
+	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,7 +14,7 @@ import (
 func TestLongOutput(t *testing.T) {
 	// make sure we we test the buffer output.
 	cmdStr := "seq 999999"
-	cmd := process.Run(cmdStr, 0)
+	cmd := process.Run(cmdStr, 0, nil)
 	if cmd.Err != nil {
 		t.Fatal(cmd.Err)
 	}
@@ -22,18 +24,70 @@ func TestLongOutput(t *testing.T) {
 func TestSigPipe(t *testing.T) {
 	// make sure we we test the buffer output.
 	cmdStr := "seq 999999 | head"
-	cmd := process.Run(cmdStr, 1)
+	cmd := process.Run(cmdStr, 1, nil)
 	if cmd.Err != nil {
 		t.Fatal(cmd.Err)
 	}
+}
 
+func TestCallBack(t *testing.T) {
+	// make sure we we test the buffer output.
+	cmdStr := "seq 99"
+	callback := func(r io.Reader, w io.WriteCloser) error {
+		b := bufio.NewReader(r)
+		var v, sum int
+		for {
+			line, err := b.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+			v, err = strconv.Atoi(strings.TrimSpace(line))
+			if err != nil {
+				return err
+			}
+			sum += v
+		}
+		_, err := w.Write([]byte(strconv.Itoa(sum)))
+		w.Close()
+		return err
+	}
+
+	cmd := process.Run(cmdStr, 1, callback)
+	if cmd.Err != nil {
+		t.Fatal(cmd.Err)
+	}
+	out, err := bufio.NewReader(cmd).ReadString('\n')
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+	if out != "4950" {
+		t.Fatalf("expected: 4950, got: %s\n", out)
+	}
+}
+
+func TestCallBackError(t *testing.T) {
+	// make sure we we test the buffer output.
+	cmdStr := "seq 99"
+	callback := func(r io.Reader, w io.WriteCloser) error {
+		w.Write([]byte("22\n"))
+		w.Close()
+		return errors.New("WE MADE AN ERROR")
+	}
+
+	cmd := process.Run(cmdStr, 1, callback)
+	if cmd.Err == nil {
+		t.Fatal("expected an error")
+	}
 }
 
 func TestValidCommand(t *testing.T) {
 
 	cmdStr := "go version"
 
-	cmd := process.Run(cmdStr, 1)
+	cmd := process.Run(cmdStr, 1, nil)
 	if cmd.Err != nil && cmd.Err != io.EOF {
 		t.Fatal(cmd.Err)
 	}
@@ -56,7 +110,7 @@ func TestInvalidCommand(t *testing.T) {
 
 	cmdStr := "XXXXXX go version"
 
-	cmd := process.Run(cmdStr, 0)
+	cmd := process.Run(cmdStr, 0, nil)
 	if cmd.Err == nil {
 		t.Fatalf("expected error with cmd %s", cmd.Err)
 	}
@@ -79,7 +133,7 @@ func TestProcessor(t *testing.T) {
 
 	done := make(chan bool)
 	defer close(done)
-	for proc := range process.Runner(cmd, 0, done) {
+	for proc := range process.Runner(cmd, 0, done, nil) {
 
 		out, err := bufio.NewReader(proc).ReadString('\n')
 		if err != nil {
@@ -114,7 +168,7 @@ func TestLongRunnerError(t *testing.T) {
 	done := make(chan bool)
 	defer close(done)
 	codes := make([]int, 0, 3)
-	for o := range process.Runner(cmds, 0, done) {
+	for o := range process.Runner(cmds, 0, done, nil) {
 		codes = append(codes, o.ExitCode())
 	}
 	if codes[0] != 61 && codes[1] != 61 && codes[2] != 61 {

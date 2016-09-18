@@ -211,7 +211,7 @@ func run(args Params) {
 
 	// flush stdout every 2 seconds.
 	last := time.Now().Add(2 * time.Second)
-	for p := range process.Runner(cmds, args.Retry, cancel) {
+	for p := range process.Runner(cmds, args.Retry, cancel, nil) {
 		if ex := p.ExitCode(); ex != 0 {
 			c := color.New(color.BgRed).Add(color.Bold)
 			fmt.Fprintf(os.Stderr, "%s\n", c.SprintFunc()(fmt.Sprintf("ERROR with command: %s", p)))
