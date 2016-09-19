@@ -52,7 +52,7 @@ Implementation
 `gargs` will span a worker goroutine for each core requested via `-p`. It will attempt
 to read up to 1MB of output from each process into memory. If it reaches an EOF (they
 end of the output from the process) within that 1MB, then it will write that to stdout.
-If not, it will write to a temporary file TODO keep memory usage low. The output from
+If not, it will write to a temporary file keep memory usage low. The output from
 each process can then be sent to STDOUT with the only work being the actual copy of
 bytes from the temp-file to STDOUT--no waiting on the process itself.
 
@@ -147,10 +147,3 @@ TODO
 + [X] final exit code is the largest of any seen exit code even with -c
 + [X] dry-run
 + [ ] combinations of `-n` and `--sep`.
-+ [ ] for example, we are sending regions to bcftools view or tabix. It's faster to send multiple
-      queries to each rather than starting a new process for each one.
-      if we do 'bcftools view {} {} {}' then we'll get an error at the last round if the input is
-      not divisible by 3. For this case, we should be able to just issue a warning.
-
-	  Actually, can currently do: `seq 10 | ./gargs -n 3 "echo {0} {1} {2}"`
-
