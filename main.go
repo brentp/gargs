@@ -31,6 +31,7 @@ type Params struct {
 	Procs       int      `arg:"-p,help:number of processes to use."`
 	Nlines      int      `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
 	Retry       int      `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
+	Ordered     bool     `arg:"-o,help:keep output in order of input."`
 	Sep         string   `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
 	StopOnError bool     `arg:"-s,--stop-on-error,help:stop execution on any error. default is to report errors and continue execution."`
@@ -211,7 +212,7 @@ func run(args Params) {
 
 	// flush stdout every 2 seconds.
 	last := time.Now().Add(2 * time.Second)
-	for p := range process.Runner(cmds, args.Retry, cancel, nil) {
+	for p := range process.Runner(cmds, args.Retry, cancel, nil, args.Ordered) {
 		if ex := p.ExitCode(); ex != 0 {
 			c := color.New(color.BgRed).Add(color.Bold)
 			fmt.Fprintf(os.Stderr, "%s\n", c.SprintFunc()(fmt.Sprintf("ERROR with command: %s", p)))

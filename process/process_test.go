@@ -3,7 +3,9 @@ package process_test
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,6 +122,39 @@ func TestInvalidCommand(t *testing.T) {
 	}
 }
 
+func TestOrderedProcessor(t *testing.T) {
+
+	N := 200
+	cmd := make(chan string)
+	var expected []string
+	for i := 0; i < N; i++ {
+		expected = append(expected, fmt.Sprintf("%d", i))
+	}
+	go func() {
+		for i := 0; i < N; i++ {
+			cmd <- fmt.Sprintf("echo %d", i)
+		}
+		close(cmd)
+	}()
+	expectedStr := strings.Join(expected, "\n") + "\n"
+
+	done := make(chan bool)
+	defer close(done)
+	var got []string
+	for proc := range process.Runner(cmd, 0, done, nil, true) {
+
+		out, err := ioutil.ReadAll(proc)
+		if err != nil {
+			t.Errorf("error running command: %s\n%s", cmd, err)
+		}
+		got = append(got, string(out))
+	}
+	if strings.Join(got, "") != expectedStr {
+		t.Errorf("expected: '%s', got: '%s'", expectedStr, strings.Join(got, ""))
+	}
+
+}
+
 func TestProcessor(t *testing.T) {
 
 	cmd := make(chan string)
@@ -133,7 +168,7 @@ func TestProcessor(t *testing.T) {
 
 	done := make(chan bool)
 	defer close(done)
-	for proc := range process.Runner(cmd, 0, done, nil) {
+	for proc := range process.Runner(cmd, 0, done, nil, false) {
 
 		out, err := bufio.NewReader(proc).ReadString('\n')
 		if err != nil {
@@ -164,11 +199,12 @@ func TestLongRunnerError(t *testing.T) {
 		cmds <- "sleep 0.5"
 		close(cmds)
 	}()
+	process.BufferSize = 10
 
 	done := make(chan bool)
 	defer close(done)
 	codes := make([]int, 0, 3)
-	for o := range process.Runner(cmds, 0, done, nil) {
+	for o := range process.Runner(cmds, 0, done, nil, false) {
 		codes = append(codes, o.ExitCode())
 	}
 	if codes[0] != 61 && codes[1] != 61 && codes[2] != 61 {

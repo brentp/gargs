@@ -16,7 +16,7 @@ import (
 )
 
 // BufferSize determines how much output will be read into memory before resorting to using a temporary file
-const BufferSize = 1048576
+var BufferSize = 1048576
 
 // UnknownExit is used when the return/exit-code of the command is not known.
 const UnknownExit = 1
@@ -136,6 +136,12 @@ func Run(command string, retries int, callback CallBack) *Command {
 	return c
 }
 
+func iRun(command istring, retries int, callback CallBack) {
+	cmd := Run(command.string, retries, callback)
+	command.ch <- cmd
+	close(command.ch)
+}
+
 func oneRun(command string, callback CallBack) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
@@ -219,11 +225,36 @@ func oneRun(command string, callback CallBack) *Command {
 	return newCommand(bufio.NewReader(tmp), tmp, command, err)
 }
 
+// istring holds a command and an index.
+type istring struct {
+	string
+	ch chan *Command
+}
+
+func enumerate(commands <-chan string, istdout chan chan *Command) chan istring {
+	ch := make(chan istring)
+	go func() {
+		for c := range commands {
+			cmdch := make(chan *Command, 1)
+			istdout <- cmdch
+			ch <- istring{c, cmdch}
+		}
+		close(ch)
+		close(istdout)
+	}()
+	return ch
+}
+
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
 // done allows the caller to stop Runner, for example if an error occurs.
 // It will parallelize according to GOMAXPROCS. If a callback is specified, the user must
 // close the io.Writer before the function returns.
-func Runner(commands <-chan string, retries int, cancel <-chan bool, callback CallBack) chan *Command {
+// If ordered is true, the the output will be kept in the order of the input, potentially
+// at some cost to the efficiency of parallelization.
+func Runner(commands <-chan string, retries int, cancel <-chan bool, callback CallBack, ordered bool) chan *Command {
+	if ordered {
+		return oRunner(commands, retries, cancel, callback)
+	}
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
@@ -238,20 +269,56 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool, callback Ca
 			for cmdStr := range commands {
 				select {
 				case stdout <- Run(cmdStr, retries, callback):
-				// if we receive from this, we must exit.
-				// receive from closed channel will continually yield false
-				// so it does what we expect.
 				case <-cancel:
+					// if we receive from this, we must exit.
+					// receive from closed channel will continually yield false
+					// so it does what we expect.
 					close(stdout)
-					return
+					break
 				}
+
 			}
 		}()
 	}
 
-	// wait for all the workers to finish.
 	go func() {
 		wg.Wait()
+		close(stdout)
+	}()
+
+	return stdout
+}
+
+// use separate runner when they want output in order of input. this
+// uses istdout and a channel of channels where a channel gets pushed oneRun
+// in the order of input and that same channel gets pushed to when they
+// command is finished.
+func oRunner(commands <-chan string, retries int, cancel <-chan bool, callback CallBack) chan *Command {
+
+	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
+
+	istdout := make(chan chan *Command, 3*runtime.GOMAXPROCS(0))
+	icommands := enumerate(commands, istdout)
+
+	// Start a number of workers equal to the requested procs.
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		go func() {
+			// workers read off the same channel of incoming commands.
+			for cmd := range icommands {
+				iRun(cmd, retries, callback)
+			}
+		}()
+	}
+
+	go func() {
+		for ch := range istdout {
+			select {
+
+			case stdout <- <-ch:
+			case <-cancel:
+				break
+			}
+		}
 		close(stdout)
 	}()
 

@@ -8,10 +8,13 @@ go:
   - 1.7
 before_install:
     - go get github.com/valyala/fasttemplate
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+         brew install md5sha1sum;
+      fi
 
 
 script:
     - ./tests/functional-test.sh
+    - ORDERED="-o" ./tests/functional-test.sh
     - cd process && go test
-      #    - ORDERED="-o" ./tests/functional-test.sh
 

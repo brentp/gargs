@@ -5,10 +5,20 @@ test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest
 . ssshtest
 set -e
 
+echo $ORDERED
 
 go build -o gargs_race -race
 
 set +e
+
+fn_check_ordered() {
+     seq 1 500 | go run main.go -o -p 20  'echo {}' | md5sum
+}
+
+run check_ordered fn_check_ordered
+assert_exit_code 0
+assert_in_stdout $(seq 1 500 | md5sum | cut -f 1 -d" ")
+
 
 fn_check_basic() {
 	seq 12 -1 1 | ./gargs_race $ORDERED -p 5 -n 3 -v 'sleep {0}; echo {1} {2}'

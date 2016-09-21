@@ -23,17 +23,16 @@ Work In Progress:
 + optionally logs all commands with successful commands prefixed by '#' so it's easy to find failed commands.
 + simple implementation.
 + expects a $SHELL command as the argument rather than requiring `bash -c ...`
++ allows keeping output in order of input even when proceses finish out of order (via -o flag)
 
 
-An very simple example usage with 4 processes to echo some numbers:
+An very simple example usage with 3 processes to echo some numbers:
 
 ```
-$ seq 5 | gargs --log my.log -p 4 "echo {0}"
+$ seq 3 | gargs --log my.log -p 3 "echo {0}"
 1
 2
 3
-4
-5
 ```
 
 my.log will contain the commands run and a final line '# SUCCESS' that shows all processes finished
@@ -109,9 +108,9 @@ Usage
 =====
 
 via `gargs -h`
-
 ```
-usage: gargs [--procs PROCS] [--nlines NLINES] [--retry RETRY] [--sep SEP] [--verbose] [--stop-on-error] [--dry-run] [--log LOG] COMMAND
+gargs 0.3.6
+usage: main [--procs PROCS] [--nlines NLINES] [--retry RETRY] [--ordered] [--sep SEP] [--verbose] [--stop-on-error] [--dry-run] [--log LOG] COMMAND
 
 positional arguments:
   command                command to execute.
@@ -123,13 +122,16 @@ options:
                          number of lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
   --retry RETRY, -r RETRY
                          number of times to retry a command if it fails (default is 0).
+  --ordered, -o          keep output in order of input.
   --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
   --verbose, -v          print commands to stderr as they are executed.
   --stop-on-error, -s    stop execution on any error. default is to report errors and continue execution.
   --dry-run, -d          print (but do not run) the commands.
   --log LOG, -l LOG      file to log commands. Successful commands are prefixed with '#'.
   --help, -h             display this help and exit
+  --version              display version and exit
 ```
+
 
 
 API

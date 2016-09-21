@@ -1,6 +1,14 @@
 0.3.6 (dev)
 =====
 + output gargs version in help.
++ restore --ordered (-o) to keep order of output same as input.
+  this will cache 3\*proccesses output waiting for the slowest job to finish.
+  This means that if the user requested 10 processes (-p 10) then there could
+  be up to 30 finished jobs waiting for a slow job to finish. If these are input
+  memory, they are guaranteed to take <= 1MB (+ go's overhead). If they are larger
+  than 1MB, then their data will be on disk.
+  This is implemented carefully such that the performance penalty will be small
+  unless there are few extremely long-running process outliers.
 
 0.3.4
 =====
