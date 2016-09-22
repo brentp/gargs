@@ -108,23 +108,6 @@ func fillTmplMap(toks []string, line string) map[string]interface{} {
 func getScanner() *bufio.Scanner {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 16384), 5e9)
-	//if rs := os.Getenv("RS"); rs != "" && rs != "\n" && rs != "\r\n" {
-	if rs := os.Getenv("RS"); rs != "" {
-		brs := []byte(rs)
-		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-			if atEOF && len(data) == 0 {
-				return 0, nil, nil
-			}
-			if i := bytes.Index(data, brs); i >= 0 {
-				// Note that by adding the length here, we include the delimiter.
-				return i + 1, data[:i+len(brs)], nil
-			}
-			if atEOF {
-				return len(data), data, nil
-			}
-			return 0, nil, nil
-		})
-	}
 	return scanner
 }
 
@@ -136,11 +119,6 @@ func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 	}
 
 	scanner := getScanner()
-	fs := os.Getenv("FS")
-	if fs == "" {
-		fs = " "
-	}
-
 	go func() {
 		var lines []string
 		if resep == nil {
@@ -152,7 +130,6 @@ func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 			line := scanner.Text()
 			serr := scanner.Err()
 			if serr == nil || (serr == io.EOF && len(line) > 0) {
-				// TODO: make dropping bytes optional.
 				if resep != nil {
 					toks := resep.Split(line, -1)
 					targs := fillTmplMap(toks, line)
@@ -169,7 +146,7 @@ func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 				log.Fatal(serr)
 			}
 			if len(lines) >= args.Nlines {
-				targs := fillTmplMap(lines, strings.Join(lines, fs))
+				targs := fillTmplMap(lines, strings.Join(lines, " "))
 				_, err := tmpl.Execute(&buf, targs)
 				check(err)
 				lines = lines[:0]
@@ -177,7 +154,7 @@ func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 			}
 		}
 		if len(lines) > 0 {
-			targs := fillTmplMap(lines, strings.Join(lines, fs))
+			targs := fillTmplMap(lines, strings.Join(lines, " "))
 			_, err := tmpl.Execute(&buf, targs)
 			check(err)
 			handleCommand(args, buf.String(), ch)
