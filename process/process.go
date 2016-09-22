@@ -122,22 +122,30 @@ type CallBack func(io.Reader, io.WriteCloser) error
 
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
-// that is an io.Reader. If retries > 0 it will retry on a
-// non-zero exit-code. If callback is non-nil, it will be executed
-// on the stream as it runs.
-func Run(command string, retries int, callback CallBack) *Command {
+// that is an io.Reader. See Options for additional details.
+func Run(command string, opts *Options) *Command {
 	t := time.Now()
-	c := oneRun(command, callback)
+	var c *Command
+	var retries int
+	if opts == nil {
+		c = oneRun(command, nil)
+		retries = 0
+	} else {
+		c = oneRun(command, opts.CallBack)
+		retries = opts.Retries
+	}
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command, callback)
+		c = oneRun(command, opts.CallBack)
 	}
 	c.Duration = time.Since(t)
 	return c
 }
 
-func iRun(command istring, retries int, callback CallBack) {
-	cmd := Run(command.string, retries, callback)
+// iRun calls run and sends result to channel. used when we want
+// to keep output in same order as input
+func iRun(command istring, opts *Options) {
+	cmd := Run(command.string, opts)
 	command.ch <- cmd
 	close(command.ch)
 }
@@ -245,15 +253,25 @@ func enumerate(commands <-chan string, istdout chan chan *Command) chan istring 
 	return ch
 }
 
+// Options holds the options to send to Runner.
+type Options struct {
+	// A callback to be applied to the output of the command. The user is responsible
+	// for closing the io.Writer insde the this function.
+	CallBack CallBack
+	// Ordered keeps the output in order even when the processes finish in a different order.io
+	// This can come at the expense of performance when waiting on a long process.
+	Ordered bool
+	// Retries indicates the number of times a process will be retried if it has
+	// a non-zero exit code.
+	Retries int
+}
+
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
 // done allows the caller to stop Runner, for example if an error occurs.
-// It will parallelize according to GOMAXPROCS. If a callback is specified, the user must
-// close the io.Writer before the function returns.
-// If ordered is true, the the output will be kept in the order of the input, potentially
-// at some cost to the efficiency of parallelization.
-func Runner(commands <-chan string, retries int, cancel <-chan bool, callback CallBack, ordered bool) chan *Command {
-	if ordered {
-		return oRunner(commands, retries, cancel, callback)
+// It will parallelize according to GOMAXPROCS. See Options for more details.
+func Runner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Command {
+	if opts.Ordered {
+		return oRunner(commands, cancel, opts)
 	}
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
@@ -268,7 +286,7 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool, callback Ca
 			// workers read off the same channel of incoming commands.
 			for cmdStr := range commands {
 				select {
-				case stdout <- Run(cmdStr, retries, callback):
+				case stdout <- Run(cmdStr, opts):
 				case <-cancel:
 					// if we receive from this, we must exit.
 					// receive from closed channel will continually yield false
@@ -293,7 +311,7 @@ func Runner(commands <-chan string, retries int, cancel <-chan bool, callback Ca
 // uses istdout and a channel of channels where a channel gets pushed oneRun
 // in the order of input and that same channel gets pushed to when they
 // command is finished.
-func oRunner(commands <-chan string, retries int, cancel <-chan bool, callback CallBack) chan *Command {
+func oRunner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Command {
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
@@ -305,7 +323,7 @@ func oRunner(commands <-chan string, retries int, cancel <-chan bool, callback C
 		go func() {
 			// workers read off the same channel of incoming commands.
 			for cmd := range icommands {
-				iRun(cmd, retries, callback)
+				iRun(cmd, opts)
 			}
 		}()
 	}
