@@ -32,6 +32,23 @@ func TestSigPipe(t *testing.T) {
 	}
 }
 
+func TestEnv(t *testing.T) {
+	cmdStr := "echo -n $ZZZ"
+	cmd := process.Run(cmdStr, &process.Options{Retries: 1}, "ZZZ=HELLOWORLD")
+	if cmd.Err != nil {
+		t.Fatal(cmd.Err)
+	}
+
+	out, err := ioutil.ReadAll(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "HELLOWORLD" {
+		t.Fatalf("expected: HELLOWORLD, got '%s'\n", string(out))
+	}
+
+}
+
 func TestCallBack(t *testing.T) {
 	// make sure we we test the buffer output.
 	cmdStr := "seq 99"
@@ -122,6 +139,40 @@ func TestInvalidCommand(t *testing.T) {
 	}
 }
 
+func TestProcessIEnv(t *testing.T) {
+
+	o := []bool{true, false}
+	for _, ordered := range o {
+		opts := process.Options{Retries: 0, Ordered: ordered}
+		cmd := make(chan string)
+		done := make(chan bool)
+		N := 20
+		defer close(done)
+		go func() {
+			for i := 0; i < N; i++ {
+				cmd <- "set -u; echo -n $PROCESS_I"
+			}
+			close(cmd)
+		}()
+		found := make(map[string]bool, N)
+		for proc := range process.Runner(cmd, done, &opts) {
+			l, _, err := proc.ReadLine()
+			if proc.ExitCode() != 0 {
+				t.Fatalf("got non-zero exitcode for %s with opts: %r\n", proc, opts)
+			}
+			if err != nil && err != io.EOF {
+				t.Fatalf("got error: %s for %s\n", err, proc)
+			}
+			found[string(l)] = true
+		}
+		for i := 0; i < N; i++ {
+			if _, ok := found[strconv.Itoa(i)]; !ok {
+				t.Fatalf("didn't find %d in output for PROCESS_I with opts: %r\n", i, opts)
+			}
+		}
+	}
+}
+
 func TestOrderedProcessor(t *testing.T) {
 
 	N := 200
@@ -143,7 +194,6 @@ func TestOrderedProcessor(t *testing.T) {
 	var got []string
 
 	opts := process.Options{Retries: 0, Ordered: true}
-
 	for proc := range process.Runner(cmd, done, &opts) {
 
 		out, err := ioutil.ReadAll(proc)

@@ -123,36 +123,39 @@ type CallBack func(io.Reader, io.WriteCloser) error
 // Run takes a command string, executes the command,
 // Blocks until the output is finished and returns a *Command
 // that is an io.Reader. See Options for additional details.
-func Run(command string, opts *Options) *Command {
+func Run(command string, opts *Options, env ...string) *Command {
 	t := time.Now()
 	var c *Command
 	var retries int
 	if opts == nil {
-		c = oneRun(command, nil)
-		retries = 0
+		c = oneRun(command, nil, env)
 	} else {
-		c = oneRun(command, opts.CallBack)
+		c = oneRun(command, opts.CallBack, env)
 		retries = opts.Retries
 	}
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command, opts.CallBack)
+		c = oneRun(command, opts.CallBack, env)
 	}
 	c.Duration = time.Since(t)
 	return c
 }
 
-// iRun calls run and sends result to channel. used when we want
+// oRun calls run and sends result to channel. used when we want
 // to keep output in same order as input
-func iRun(command istring, opts *Options) {
-	cmd := Run(command.string, opts)
+func oRun(command istring, opts *Options, env ...string) {
+	cmd := Run(command.string, opts, env...)
 	command.ch <- cmd
 	close(command.ch)
 }
 
-func oneRun(command string, callback CallBack) *Command {
+func oneRun(command string, callback CallBack, env []string) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
+	if len(env) > 0 {
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, env...)
+	}
 	var opipe io.Reader
 
 	spipe, err := cmd.StdoutPipe()
@@ -237,18 +240,30 @@ func oneRun(command string, callback CallBack) *Command {
 type istring struct {
 	string
 	ch chan *Command
+	i  int
 }
 
+// add the index (i) to a command so we know the order.io
+// if istdout is nil, then we only add the index. otherwise, when
+// push a channel onto istdout and into each istring to keep
+// the order.
 func enumerate(commands <-chan string, istdout chan chan *Command) chan istring {
 	ch := make(chan istring)
+	var cmdch chan *Command
 	go func() {
+		i := 0
 		for c := range commands {
-			cmdch := make(chan *Command, 1)
-			istdout <- cmdch
-			ch <- istring{c, cmdch}
+			if istdout != nil {
+				cmdch = make(chan *Command)
+				istdout <- cmdch
+			}
+			ch <- istring{c, cmdch, i}
+			i++
 		}
 		close(ch)
-		close(istdout)
+		if istdout != nil {
+			close(istdout)
+		}
 	}()
 	return ch
 }
@@ -275,6 +290,7 @@ func Runner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Com
 	}
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
+	icommands := enumerate(commands, nil)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(runtime.GOMAXPROCS(0))
@@ -284,9 +300,9 @@ func Runner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Com
 		go func() {
 			defer wg.Done()
 			// workers read off the same channel of incoming commands.
-			for cmdStr := range commands {
+			for cmd := range icommands {
 				select {
-				case stdout <- Run(cmdStr, opts):
+				case stdout <- Run(cmd.string, opts, fmt.Sprintf("PROCESS_I=%d", cmd.i)):
 				case <-cancel:
 					// if we receive from this, we must exit.
 					// receive from closed channel will continually yield false
@@ -323,7 +339,7 @@ func oRunner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Co
 		go func() {
 			// workers read off the same channel of incoming commands.
 			for cmd := range icommands {
-				iRun(cmd, opts)
+				oRun(cmd, opts, fmt.Sprintf("PROCESS_I=%d", cmd.i))
 			}
 		}()
 	}

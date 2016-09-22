@@ -11,8 +11,6 @@ gargs
 
 [![Build Status](https://travis-ci.org/brentp/gargs.svg?branch=master)](https://travis-ci.org/brentp/gargs)
 
-Work In Progress:
-
 **gargs** is like **xargs** but it addresses the following limitations in xargs:
 
 + it keeps the output serialized (in `xargs` the output one process may be interrupted mid-line by the output from another process) even when using multiple threads
@@ -36,8 +34,7 @@ $ seq 3 | gargs --log my.log -p 3 "echo {0}"
 ```
 
 my.log will contain the commands run and a final line '# SUCCESS' that shows all processes finished
-without error. This makes it easy to assure that all commands ran without error even if the user
-didn't catch the exit code of the command.
+without error. This makes it easy to check if all commands ran without catching the exit code of the command.
 
 Install
 =======
@@ -132,6 +129,17 @@ options:
   --version              display version and exit
 ```
 
+Environment Variables
+=====================
+
+The environment variable `PROCESS_I` is set to the (0-based) line (or batch of lines) number
+of the input line it is processing.
+
+For example, this can be used create unique file names.:
+
+```
+... | gargs -p 20 'do-stuff $input > $PROCESS_I.output.txt'
+```
 
 
 API

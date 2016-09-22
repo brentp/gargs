@@ -11,8 +11,20 @@ go build -o gargs_race -race
 
 set +e
 
+fn_check_env() {
+    seq 5 10 | ./gargs_race $ORDERED -p 2 'set -u; echo $PROCESS_I'
+}
+run check_env fn_check_env
+assert_exit_code 0
+assert_equal 1 $(grep -wc 0 $STDOUT_FILE)
+assert_equal 1 $(grep -wc 1 $STDOUT_FILE)
+assert_equal 1 $(grep -wc 2 $STDOUT_FILE)
+assert_equal 1 $(grep -wc 3 $STDOUT_FILE)
+assert_equal 1 $(grep -wc 4 $STDOUT_FILE)
+assert_equal 1 $(grep -wc 5 $STDOUT_FILE)
+
 fn_check_ordered() {
-     seq 1 500 | go run main.go -o -p 20  'echo {}' | md5sum
+     seq 1 500 | ./gargs_race -o -p 20  'echo {}' | md5sum
 }
 
 run check_ordered fn_check_ordered

@@ -9,6 +9,7 @@
   than 1MB, then their data will be on disk.
   This is implemented carefully such that the performance penalty will be small
   unless there are few extremely long-running process outliers.
++ set $PROCESS\_I environment variable for each line (or batch of lines).
 
 0.3.4
 =====
