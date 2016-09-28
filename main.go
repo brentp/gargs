@@ -37,7 +37,7 @@ type Params struct {
 	StopOnError bool     `arg:"-s,--stop-on-error,help:stop all processes on any error."`
 	DryRun      bool     `arg:"-d,--dry-run,help:print (but do not run) the commands."`
 	Log         string   `arg:"-l,--log,help:file to log commands. Successful commands are prefixed with '#'."`
-	Command     string   `arg:"positional,required,help:command to execute."`
+	Command     string   `arg:"positional,required,help:command template to fill and execute."`
 	log         *os.File `arg:"-"`
 }
 

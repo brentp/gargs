@@ -107,26 +107,27 @@ Usage
 via `gargs -h`
 ```
 gargs 0.3.6
-usage: main [--procs PROCS] [--nlines NLINES] [--retry RETRY] [--ordered] [--sep SEP] [--verbose] [--stop-on-error] [--dry-run] [--log LOG] COMMAND
+usage: gargs [--procs PROCS] [--sep SEP] [--nlines NLINES] [--retry RETRY] [--ordered] [--verbose] [--stop-on-error] [--dry-run] [--log LOG] COMMAND
 
 positional arguments:
-  command                command to execute.
+  command                command template to fill and execute.
 
 options:
   --procs PROCS, -p PROCS
                          number of processes to use. [default: 1]
+  --sep SEP, -s SEP      regex to split line to fill multiple template place-holders.
   --nlines NLINES, -n NLINES
-                         number of lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
+                         lines to consume for each command. -s and -n are mutually exclusive. [default: 1]
   --retry RETRY, -r RETRY
-                         number of times to retry a command if it fails (default is 0).
+                         times to retry a command if it fails (default is 0).
   --ordered, -o          keep output in order of input.
-  --sep SEP, -s SEP      regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive.
   --verbose, -v          print commands to stderr as they are executed.
-  --stop-on-error, -s    stop execution on any error. default is to report errors and continue execution.
+  --stop-on-error, -s    stop all processes on any error.
   --dry-run, -d          print (but do not run) the commands.
   --log LOG, -l LOG      file to log commands. Successful commands are prefixed with '#'.
   --help, -h             display this help and exit
   --version              display version and exit
+
 ```
 
 Environment Variables
@@ -157,3 +158,18 @@ TODO
 + [X] final exit code is the largest of any seen exit code even with -c
 + [X] dry-run
 + [ ] combinations of `-n` and `--sep`.
+
+
+Extras
+======
+
+Transactional
+-------------
+
+While this isn't done in `gargs` per se. The user can implement their own transactional setup with something like:
+
+```
+... | gargs -p 20 "if [[ ! -e $PROCESS_i.final ]]; then do-stuff {} > $PROCESS_I.tmp && mv $PROCESS_I.tmp $PROCESS_I.final; fi" 
+```
+Since `mv` is atomic on most systems. This will only ever `do-stuff` sucessfully once. 
+
