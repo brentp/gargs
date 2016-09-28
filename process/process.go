@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -127,15 +128,32 @@ func Run(command string, opts *Options, env ...string) *Command {
 	t := time.Now()
 	var c *Command
 	var retries int
+	var offset int64
+	var stdin io.Reader
+	// if stdin and retries, stdin must be seekable.
+	if opts.Stdin != nil && (opts != nil && opts.Retries > 0) {
+		stdin = <-opts.Stdin
+		if s, ok := stdin.(io.Seeker); ok {
+			offset, _ = s.Seek(0, os.SEEK_CUR)
+		} else {
+			log.Println("process: can't retry with stdin if not seekable")
+			opts.Retries = 0
+		}
+	}
 	if opts == nil {
-		c = oneRun(command, nil, env)
+		c = oneRun(command, stdin, nil, env)
 	} else {
-		c = oneRun(command, opts.CallBack, env)
+		c = oneRun(command, stdin, opts.CallBack, env)
 		retries = opts.Retries
 	}
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command, opts.CallBack, env)
+		if stdin == nil {
+			c = oneRun(command, nil, opts.CallBack, env)
+		} else if s, ok := stdin.(io.ReadSeeker); ok {
+			s.Seek(offset, os.SEEK_SET)
+			c = oneRun(command, s, opts.CallBack, env)
+		}
 	}
 	c.Duration = time.Since(t)
 	return c
@@ -149,7 +167,7 @@ func oRun(command istring, opts *Options, env ...string) {
 	close(command.ch)
 }
 
-func oneRun(command string, callback CallBack, env []string) *Command {
+func oneRun(command string, stdin io.Reader, callback CallBack, env []string) *Command {
 
 	cmd := exec.Command(getShell(), "-c", command)
 	if len(env) > 0 {
@@ -157,6 +175,9 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 		cmd.Env = append(cmd.Env, env...)
 	}
 	var opipe io.Reader
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 
 	spipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -279,6 +300,9 @@ type Options struct {
 	// Retries indicates the number of times a process will be retried if it has
 	// a non-zero exit code.
 	Retries int
+	// Stdin is a channel on which the caller can send io.Readers that will be set temporary
+	// the stdin of each process
+	Stdin chan io.Reader
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
@@ -332,6 +356,7 @@ func oRunner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Co
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
 	istdout := make(chan chan *Command, 3*runtime.GOMAXPROCS(0))
+	// TODO: make this read from stdin as well.
 	icommands := enumerate(commands, istdout)
 
 	// Start a number of workers equal to the requested procs.
