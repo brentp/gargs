@@ -29,12 +29,12 @@ var ExitCode = 0
 // Params are the user-specified command-line arguments
 type Params struct {
 	Procs       int      `arg:"-p,help:number of processes to use."`
-	Nlines      int      `arg:"-n,help:number of lines to consume for each command. -s and -n are mutually exclusive."`
-	Retry       int      `arg:"-r,help:number of times to retry a command if it fails (default is 0)."`
+	Sep         string   `arg:"-s,help:regex to split line to fill multiple template place-holders."`
+	Nlines      int      `arg:"-n,help:lines to consume for each command. -s and -n are mutually exclusive."`
+	Retry       int      `arg:"-r,help:times to retry a command if it fails (default is 0)."`
 	Ordered     bool     `arg:"-o,help:keep output in order of input."`
-	Sep         string   `arg:"-s,help:regular expression split line with to fill multiple template spots default is not to split. -s and -n are mutually exclusive."`
 	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
-	StopOnError bool     `arg:"-s,--stop-on-error,help:stop execution on any error. default is to report errors and continue execution."`
+	StopOnError bool     `arg:"-s,--stop-on-error,help:stop all processes on any error."`
 	DryRun      bool     `arg:"-d,--dry-run,help:print (but do not run) the commands."`
 	Log         string   `arg:"-l,--log,help:file to log commands. Successful commands are prefixed with '#'."`
 	Command     string   `arg:"positional,required,help:command to execute."`
