@@ -15,12 +15,13 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/brentp/gargs/process"
+	"github.com/brentp/xopen"
 	"github.com/fatih/color"
 	isatty "github.com/mattn/go-isatty"
 	"github.com/valyala/fasttemplate"
 )
 
-// Version is the current version
+// Version is exported
 const Version = "0.3.6"
 
 // ExitCode is the highest exit code seen in any command
@@ -35,6 +36,7 @@ type Params struct {
 	Ordered     bool     `arg:"-o,help:keep output in order of input."`
 	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
 	StopOnError bool     `arg:"-s,--stop-on-error,help:stop all processes on any error."`
+	Stdin       bool     `arg:"help:each process consumes --nlines of stdin."`
 	DryRun      bool     `arg:"-d,--dry-run,help:print (but do not run) the commands."`
 	Log         string   `arg:"-l,--log,help:file to log commands. Successful commands are prefixed with '#'."`
 	Command     string   `arg:"positional,required,help:command template to fill and execute."`
@@ -111,7 +113,48 @@ func getScanner() *bufio.Scanner {
 	return scanner
 }
 
+// consume args.Nlines from stdin, write to a tempfile then send them
+// directly into the command inside the shell.
+// So a command like "dosomework" becomes "dosomework < tmpfile; rm tmpfile"
+func genCommandsFromStdin(args *Params, cmdStr string) <-chan string {
+	ch := make(chan string)
+	scanner := getScanner()
+	go func() {
+		tmp, err := xopen.Wopen("tmp:gargs.stdin.")
+		check(err)
+		lines := 0
+		for scanner.Scan() {
+			tmp.Write(scanner.Bytes())
+			tmp.Write([]byte{'\n'})
+			lines++
+			if lines == args.Nlines {
+				if args.Verbose {
+					log.Printf("sending %d lines to stdin", lines)
+				}
+				tmp.Close()
+				ch <- fmt.Sprintf("%s < %s; rm %s", cmdStr, tmp.Name(), tmp.Name())
+				tmp, err = xopen.Wopen("tmp:gargs.stdin.")
+				check(err)
+				lines = 0
+			}
+		}
+		if lines > 0 {
+			if args.Verbose {
+				log.Printf("sending %d lines to stdin", lines)
+			}
+			tmp.Close()
+			ch <- fmt.Sprintf("%s < %s; rm %s", cmdStr, tmp.Name(), tmp.Name())
+		}
+		check(scanner.Err())
+		close(ch)
+	}()
+	return ch
+}
+
 func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
+	if args.Stdin {
+		return genCommandsFromStdin(args, tmpl.ExecuteString(nil))
+	}
 	ch := make(chan string)
 	var resep *regexp.Regexp
 	if args.Sep != "" {
@@ -128,22 +171,14 @@ func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 		for scanner.Scan() {
 			buf.Reset()
 			line := scanner.Text()
-			serr := scanner.Err()
-			if serr == nil || (serr == io.EOF && len(line) > 0) {
-				if resep != nil {
-					toks := resep.Split(line, -1)
-					targs := fillTmplMap(toks, line)
-					_, err := tmpl.Execute(&buf, targs)
-					check(err)
-					handleCommand(args, buf.String(), ch)
-				} else {
-					lines = append(lines, line)
-				}
+			if resep != nil {
+				toks := resep.Split(line, -1)
+				targs := fillTmplMap(toks, line)
+				_, err := tmpl.Execute(&buf, targs)
+				check(err)
+				handleCommand(args, buf.String(), ch)
 			} else {
-				if serr == io.EOF {
-					break
-				}
-				log.Fatal(serr)
+				lines = append(lines, line)
 			}
 			if len(lines) >= args.Nlines {
 				targs := fillTmplMap(lines, strings.Join(lines, " "))
@@ -159,6 +194,7 @@ func genCommands(args *Params, tmpl *fasttemplate.Template) <-chan string {
 			check(err)
 			handleCommand(args, buf.String(), ch)
 		}
+		check(scanner.Err())
 		close(ch)
 	}()
 	return ch
