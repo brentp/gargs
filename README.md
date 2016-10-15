@@ -46,10 +46,10 @@ Implementation
 ==============
 
 `gargs` will span a worker goroutine for each core requested via `-p`. It will attempt
-to read up to 1MB of output from each process into memory. If it reaches an EOF (they
-end of the output from the process) within that 1MB, then it will write that to stdout.
-If not, it will write to a temporary file keep memory usage low. The output from
-each process can then be sent to STDOUT with the only work being the actual copy of
+to read up to 1MB (settable by `PROCESS_BUFFER` env varianble) of output from each proceses
+into memory. If it reaches an EOF (they end of the output from the process) within that 1MB,
+then it will write that to stdout. If not, it will write to a temporary file keep memory usage:
+low. The output from each process can then be sent to STDOUT with the only work being the actual copy of
 bytes from the temp-file to STDOUT--no waiting on the process itself.
 
 Each process is run via golang's [os/exec#Cmd](https://golang.org/pkg/os/exec/#Cmd) with

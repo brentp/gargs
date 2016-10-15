@@ -1,5 +1,5 @@
 0.3.6 (dev)
-=====
+===========
 + output gargs version in help.
 + restore --ordered (-o) to keep order of output same as input.
   this will cache 3\*proccesses output waiting for the slowest job to finish.
@@ -10,6 +10,7 @@
   This is implemented carefully such that the performance penalty will be small
   unless there are few extremely long-running process outliers.
 + set $PROCESS\_I environment variable for each line (or batch of lines).
++ read `PROCESS_BUFFER` to let user set size of data before a tempfile is used.
 
 0.3.4
 =====

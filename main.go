@@ -173,6 +173,11 @@ func max(a, b int) int {
 
 func init() {
 	color.NoColor = !isatty.IsTerminal(os.Stderr.Fd())
+	if s := os.Getenv("PROCESS_BUFFER"); s != "" {
+		if bs, err := strconv.Atoi(s); err == nil {
+			process.BufferSize = bs
+		}
+	}
 }
 
 func run(args Params) {
