@@ -173,9 +173,14 @@ func max(a, b int) int {
 
 func init() {
 	color.NoColor = !isatty.IsTerminal(os.Stderr.Fd())
-	if s := os.Getenv("PROCESS_BUFFER"); s != "" {
+	if s := os.Getenv("GARGS_PROCESS_BUFFER"); s != "" {
 		if bs, err := strconv.Atoi(s); err == nil {
 			process.BufferSize = bs
+		}
+	}
+	if s := os.Getenv("GARGS_WAIT_MULTIPLIER"); s != "" {
+		if bs, err := strconv.Atoi(s); err == nil && bs >= 1 {
+			process.WaitingMultiplier = bs
 		}
 	}
 }

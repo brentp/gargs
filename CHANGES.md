@@ -10,7 +10,9 @@
   This is implemented carefully such that the performance penalty will be small
   unless there are few extremely long-running process outliers.
 + set $PROCESS\_I environment variable for each line (or batch of lines).
-+ read `PROCESS_BUFFER` to let user set size of data before a tempfile is used.
++ read `GARGS_PROCESS_BUFFER` to let user set size of data before a tempfile is used.
++ read `GARGS_WAIT_MULTIPLIER` to determine how many finished processes will wait for single slow processes
+  higher values improve concurrency at the expense of memory.
 
 0.3.4
 =====

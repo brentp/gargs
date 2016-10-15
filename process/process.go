@@ -18,6 +18,10 @@ import (
 // BufferSize determines how much output will be read into memory before resorting to using a temporary file
 var BufferSize = 1048576
 
+// WaitingMultiplier determines how many finished processes can be waiting before Runner blocks waiting for
+// the slowest process finishes. Increasing this improves concurrency at the expense of memory.
+var WaitingMultiplier = 4
+
 // UnknownExit is used when the return/exit-code of the command is not known.
 const UnknownExit = 1
 
@@ -331,7 +335,9 @@ func oRunner(commands <-chan string, cancel <-chan bool, opts *Options) chan *Co
 
 	stdout := make(chan *Command, runtime.GOMAXPROCS(0))
 
-	istdout := make(chan chan *Command, 3*runtime.GOMAXPROCS(0))
+	// this means that if e.g. 12 processors are available and WaitingMultiplier is 4
+	// then up to 47 finished processes can be blocked waiting for the slowest one to finish.
+	istdout := make(chan chan *Command, WaitingMultiplier*runtime.GOMAXPROCS(0))
 	icommands := enumerate(commands, istdout)
 
 	// Start a number of workers equal to the requested procs.

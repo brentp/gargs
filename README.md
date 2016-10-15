@@ -41,12 +41,37 @@ Install
 
 Download the appropriate binary for your system from [releases](https://github.com/brentp/gargs/releases) into your $PATH.
 
+Environment Variables
+=====================
+
+`GARGS_PROCESS_BUFFER`
+----------------------
+
+`GARGS_PROCESS_BUFFER` can be used to set the size of data that can be read into memory before a tmp file is used.
+Increasing this value increases memory use and decreases disk IO. E.g. to tell `gargs` to use a tmp file only
+when it has read 20MB (for example if we know that most processes will generate less than that). user
+
+```
+GARGS_PROCESS_BUFFER=20000000 gargs ...
+```
+
+Changing this value will not affect the output at all, it will only change the internal decisions in `gargs`
+
+
+`GARGS_WAIT_MULTIPLIER`
+-----------------------
+
+Increasing this value improves concurrency at the expense of memory when `-o` or `--ordered` is used.
+It determines the size of the queue that finished processes will be pushed onto and therefore how many
+processes can be waiting will a single (or few) slow process are still running. If the user specified 
+`-p` 10 and GARGS_WAIT_MULTIPLIER=5, then up to 49 processes can wait for a singe slow process.
+The default value is 4.
 
 Implementation
 ==============
 
 `gargs` will span a worker goroutine for each core requested via `-p`. It will attempt
-to read up to 1MB (settable by `PROCESS_BUFFER` env varianble) of output from each proceses
+to read up to 1MB (settable by `GARGS_PROCESS_BUFFER` env variable) of output from each proceses
 into memory. If it reaches an EOF (they end of the output from the process) within that 1MB,
 then it will write that to stdout. If not, it will write to a temporary file keep memory usage:
 low. The output from each process can then be sent to STDOUT with the only work being the actual copy of
