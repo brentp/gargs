@@ -11,8 +11,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/brentp/easyssh"
 )
 
 // BufferSize determines how much output will be read into memory before resorting to using a temporary file
@@ -131,15 +134,21 @@ func Run(command string, opts *Options, env ...string) *Command {
 	t := time.Now()
 	var c *Command
 	var retries int
+	var host *sshConfig
 	if opts == nil {
-		c = oneRun(command, nil, env)
+		c = oneRun(command, nil, env, nil)
 	} else {
-		c = oneRun(command, opts.CallBack, env)
+		host = opts.getHost()
+		if host != nil {
+			host.increment()
+			defer host.decrement()
+		}
+		c = oneRun(command, opts.CallBack, env, host)
 		retries = opts.Retries
 	}
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command, opts.CallBack, env)
+		c = oneRun(command, opts.CallBack, env, host)
 	}
 	c.Duration = time.Since(t)
 	return c
@@ -153,12 +162,31 @@ func oRun(command istring, opts *Options, env ...string) {
 	close(command.ch)
 }
 
-func oneRun(command string, callback CallBack, env []string) *Command {
+type cmdr interface {
+	StdoutPipe() (io.ReadCloser, error)
+	Start() error
+	Wait() error
+}
 
-	cmd := exec.Command(getShell(), "-c", command)
+func oneRun(command string, callback CallBack, env []string, cfg *sshConfig) *Command {
+	var cmd cmdr
+
+	if cfg != nil {
+		var err error
+		cmd, err = cfg.Command(command)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error connecting to %s@%s. Using local.\n", cfg.User, cfg.Server)
+		}
+	}
+	if cmd == nil {
+		cmd = exec.Command(getShell(), "-c", command)
+	}
 	if len(env) > 0 {
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, env...)
+		if c, ok := cmd.(*exec.Cmd); ok {
+			c.Env = os.Environ()
+			c.Env = append(c.Env, env...)
+			c.Stderr = os.Stderr
+		}
 	}
 	var opipe io.Reader
 
@@ -172,6 +200,7 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 		errch = make(chan error, 1)
 		rdr, wtr := io.Pipe()
 		go func() {
+
 			err := callback(spipe, wtr)
 			if err != nil {
 				errch <- err
@@ -186,8 +215,6 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 	if err != nil {
 		return newCommand(nil, nil, command, err)
 	}
-
-	cmd.Stderr = os.Stderr
 
 	err = cmd.Start()
 	if err != nil {
@@ -231,6 +258,9 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 	_, err = tmp.Seek(0, 0)
 	if err == nil {
 		err = cmd.Wait()
+	}
+	if c, ok := cmd.(*easyssh.Session); ok {
+		c.Close()
 	}
 	if err == nil && callback != nil {
 		if e, ok := <-errch; ok {
@@ -283,6 +313,46 @@ type Options struct {
 	// Retries indicates the number of times a process will be retried if it has
 	// a non-zero exit code.
 	Retries int
+
+	// Remotes is an optional slice of remote workers connected via ssh.
+	Remotes []*sshConfig
+}
+
+func (o Options) perHost() int {
+	n := len(o.Remotes) + 1
+	return runtime.GOMAXPROCS(0) / n
+}
+
+// choose which host to run on. if the remote hosts are busy
+// then we use the localhost.
+func (o Options) getHost() *sshConfig {
+	if len(o.Remotes) == 0 {
+		return nil
+	}
+	ph := int32(o.perHost())
+	for _, r := range o.Remotes {
+		if *(r.counter) < ph {
+			return r
+		}
+	}
+	return nil
+}
+
+type sshConfig struct {
+	*easyssh.Config
+	counter *int32
+}
+
+func (s *sshConfig) increment() {
+	atomic.AddInt32(s.counter, 1)
+}
+
+func (s *sshConfig) decrement() {
+	atomic.AddInt32(s.counter, -1)
+}
+
+func (s *sshConfig) count() int32 {
+	return *(s.counter)
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
