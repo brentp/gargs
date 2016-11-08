@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/brentp/easyssh"
 	"github.com/brentp/gargs/process"
 	"github.com/fatih/color"
 	isatty "github.com/mattn/go-isatty"
@@ -31,6 +32,7 @@ type Params struct {
 	Procs       int      `arg:"-p,help:number of processes to use."`
 	Sep         string   `arg:"-s,help:regex to split line to fill multiple template place-holders."`
 	Nlines      int      `arg:"-n,help:lines to consume for each command. -s and -n are mutually exclusive."`
+	Hosts       string   `arg:"-x,help:comma delimited remote hosts to send commands. Must have keys or sshagent set up."`
 	Retry       int      `arg:"-r,help:times to retry a command if it fails (default is 0)."`
 	Ordered     bool     `arg:"-o,help:keep output in order of input."`
 	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
@@ -200,6 +202,12 @@ func run(args Params) {
 	// flush stdout every 2 seconds.
 	last := time.Now().Add(2 * time.Second)
 	opts := process.Options{Retries: args.Retry, Ordered: args.Ordered}
+	for _, h := range strings.Split(args.Hosts, ",") {
+		if strings.TrimSpace(h) == "" {
+			continue
+		}
+		opts.Remotes = append(opts.Remotes, &process.SshConfig{Config: &easyssh.Config{Server: h}})
+	}
 	for p := range process.Runner(cmds, cancel, &opts) {
 
 		if ex := p.ExitCode(); ex != 0 {

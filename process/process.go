@@ -134,7 +134,7 @@ func Run(command string, opts *Options, env ...string) *Command {
 	t := time.Now()
 	var c *Command
 	var retries int
-	var host *sshConfig
+	var host *SshConfig
 	if opts == nil {
 		c = oneRun(command, nil, env, nil)
 	} else {
@@ -168,7 +168,7 @@ type cmdr interface {
 	Wait() error
 }
 
-func oneRun(command string, callback CallBack, env []string, cfg *sshConfig) *Command {
+func oneRun(command string, callback CallBack, env []string, cfg *SshConfig) *Command {
 	var cmd cmdr
 
 	if cfg != nil {
@@ -176,6 +176,7 @@ func oneRun(command string, callback CallBack, env []string, cfg *sshConfig) *Co
 		cmd, err = cfg.Command(command)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error connecting to %s@%s. Using local.\n", cfg.User, cfg.Server)
+			cmd = nil
 		}
 	}
 	if cmd == nil {
@@ -315,7 +316,7 @@ type Options struct {
 	Retries int
 
 	// Remotes is an optional slice of remote workers connected via ssh.
-	Remotes []*sshConfig
+	Remotes []*SshConfig
 }
 
 func (o Options) perHost() int {
@@ -325,34 +326,35 @@ func (o Options) perHost() int {
 
 // choose which host to run on. if the remote hosts are busy
 // then we use the localhost.
-func (o Options) getHost() *sshConfig {
+func (o Options) getHost() *SshConfig {
 	if len(o.Remotes) == 0 {
 		return nil
 	}
 	ph := int32(o.perHost())
 	for _, r := range o.Remotes {
-		if *(r.counter) < ph {
+		if r.counter < ph {
 			return r
 		}
 	}
 	return nil
 }
 
-type sshConfig struct {
+// SshConfig let's a users specify remote hosts.
+type SshConfig struct {
 	*easyssh.Config
-	counter *int32
+	counter int32
 }
 
-func (s *sshConfig) increment() {
-	atomic.AddInt32(s.counter, 1)
+func (s *SshConfig) increment() {
+	atomic.AddInt32(&s.counter, 1)
 }
 
-func (s *sshConfig) decrement() {
-	atomic.AddInt32(s.counter, -1)
+func (s *SshConfig) decrement() {
+	atomic.AddInt32(&s.counter, -1)
 }
 
-func (s *sshConfig) count() int32 {
-	return *(s.counter)
+func (s *SshConfig) count() int32 {
+	return (s.counter)
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
