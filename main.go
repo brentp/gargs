@@ -34,7 +34,7 @@ type Params struct {
 	Retry       int      `arg:"-r,help:times to retry a command if it fails (default is 0)."`
 	Ordered     bool     `arg:"-o,help:keep output in order of input."`
 	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
-	StopOnError bool     `arg:"-s,--stop-on-error,help:stop all processes on any error."`
+	StopOnError bool     `arg:"-e,--stop-on-error,help:stop all processes on any error."`
 	DryRun      bool     `arg:"-d,--dry-run,help:print (but do not run) the commands."`
 	Log         string   `arg:"-l,--log,help:file to log commands. Successful commands are prefixed with '#'."`
 	Command     string   `arg:"positional,required,help:command template to fill and execute."`

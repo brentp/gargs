@@ -147,7 +147,7 @@ options:
                          times to retry a command if it fails (default is 0).
   --ordered, -o          keep output in order of input.
   --verbose, -v          print commands to stderr as they are executed.
-  --stop-on-error, -s    stop all processes on any error.
+  --stop-on-error, -e    stop all processes on any error.
   --dry-run, -d          print (but do not run) the commands.
   --log LOG, -l LOG      file to log commands. Successful commands are prefixed with '#'.
   --help, -h             display this help and exit
