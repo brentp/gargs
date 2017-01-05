@@ -112,7 +112,7 @@ func fillTmplMap(toks []string, line string) map[string]interface{} {
 
 func getScanner() *bufio.Scanner {
 	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 0, 16384), 5e9)
+	scanner.Buffer(make([]byte, 0, 16384), 2147483647) // max value of int32, for 32-bit compatibility
 	return scanner
 }
 
