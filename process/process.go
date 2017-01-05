@@ -3,6 +3,7 @@ package process
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -132,14 +133,14 @@ func Run(command string, opts *Options, env ...string) *Command {
 	var c *Command
 	var retries int
 	if opts == nil {
-		c = oneRun(command, nil, env)
+		c = oneRun(command, nil, opts.Timeout, env)
 	} else {
-		c = oneRun(command, opts.CallBack, env)
+		c = oneRun(command, opts.CallBack, opts.Timeout, env)
 		retries = opts.Retries
 	}
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command, opts.CallBack, env)
+		c = oneRun(command, opts.CallBack, opts.Timeout, env)
 	}
 	c.Duration = time.Since(t)
 	return c
@@ -153,9 +154,17 @@ func oRun(command istring, opts *Options, env ...string) {
 	close(command.ch)
 }
 
-func oneRun(command string, callback CallBack, env []string) *Command {
+func oneRun(command string, callback CallBack, timeout time.Duration, env []string) *Command {
 
-	cmd := exec.Command(getShell(), "-c", command)
+	var cmd *exec.Cmd
+	if timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		cmd = exec.CommandContext(ctx, getShell(), "-c", command)
+	} else {
+		cmd = exec.Command(getShell(), "-c", command)
+	}
+
 	if len(env) > 0 {
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, env...)
@@ -283,6 +292,8 @@ type Options struct {
 	// Retries indicates the number of times a process will be retried if it has
 	// a non-zero exit code.
 	Retries int
+	// Timeout indicates the longest running time of a process.
+	Timeout time.Duration
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.

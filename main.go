@@ -32,6 +32,7 @@ type Params struct {
 	Sep         string   `arg:"-s,help:regex to split line to fill multiple template place-holders."`
 	Nlines      int      `arg:"-n,help:lines to consume for each command. -s and -n are mutually exclusive."`
 	Retry       int      `arg:"-r,help:times to retry a command if it fails (default is 0)."`
+	Timeout     int      `arg:"-t,help:timeout of a command. Unit is second and 0 with no timeout (default is 0)."`
 	Ordered     bool     `arg:"-o,help:keep output in order of input."`
 	Verbose     bool     `arg:"-v,help:print commands to stderr as they are executed."`
 	StopOnError bool     `arg:"-e,--stop-on-error,help:stop all processes on any error."`
@@ -57,10 +58,14 @@ func isStdin() bool {
 }
 
 func main() {
-	args := Params{Procs: 1, Nlines: 1}
+	args := Params{Procs: 1, Nlines: 1, Timeout: 0}
 	p := arg.MustParse(&args)
 	if args.Sep != "" && args.Nlines > 1 {
 		p.Fail("must specify either sep (-s) or n-lines (-n), not both")
+	}
+	if args.Timeout < 0 {
+		fmt.Fprintln(os.Stderr, color.RedString("ERROR: expecting non-negative value for timeout (-t)"))
+		os.Exit(255)
 	}
 	// if neither is specified then we default to whitespace
 	if args.Nlines == 1 && args.Sep == "" {
@@ -199,7 +204,7 @@ func run(args Params) {
 
 	// flush stdout every 2 seconds.
 	last := time.Now().Add(2 * time.Second)
-	opts := process.Options{Retries: args.Retry, Ordered: args.Ordered}
+	opts := process.Options{Retries: args.Retry, Ordered: args.Ordered, Timeout: time.Duration(args.Timeout) * time.Second}
 	for p := range process.Runner(cmds, cancel, &opts) {
 
 		if ex := p.ExitCode(); ex != 0 {
