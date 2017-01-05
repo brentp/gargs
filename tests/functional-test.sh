@@ -151,3 +151,10 @@ assert_exit_code 0
 assert_equal $(cat $STDOUT_FILE | wc -l) 4
 assert_in_stdout "7 8 9"
 assert_equal $(grep -c "^10$" $STDOUT_FILE) 1
+
+# time out
+fn_check_timeout() {
+	seq 1 | ./gargs_race -t 1 "sleep 5; echo asdf"
+}
+run fn_check_timeout
+assert_no_stdout

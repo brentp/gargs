@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/brentp/gargs/process"
 	"github.com/fatih/color"
 	isatty "github.com/mattn/go-isatty"
+	"github.com/shenwei356/gargs/process"
 	"github.com/valyala/fasttemplate"
 )
 
