@@ -133,7 +133,7 @@ func Run(command string, opts *Options, env ...string) *Command {
 	var c *Command
 	var retries int
 	if opts == nil {
-		c = oneRun(command, nil, opts.Timeout, env)
+		c = oneRun(command, nil, 0, env)
 	} else {
 		c = oneRun(command, opts.CallBack, opts.Timeout, env)
 		retries = opts.Retries
