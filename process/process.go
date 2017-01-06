@@ -154,13 +154,18 @@ func oRun(command istring, opts *Options, env ...string) {
 	close(command.ch)
 }
 
+// ErrTimeout means timeout
+var ErrTimeout = fmt.Errorf("time out")
+
 func oneRun(command string, callback CallBack, timeout time.Duration, env []string) *Command {
 
 	var cmd *exec.Cmd
+	var ctx context.Context
+	var ctxCancel context.CancelFunc
 	if timeout > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
+		ctx, ctxCancel = context.WithTimeout(context.Background(), timeout)
 		cmd = exec.CommandContext(ctx, getShell(), "-c", command)
+		defer ctxCancel()
 	} else {
 		cmd = exec.Command(getShell(), "-c", command)
 	}
@@ -173,7 +178,7 @@ func oneRun(command string, callback CallBack, timeout time.Duration, env []stri
 
 	spipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 	defer spipe.Close()
 	var errch chan error
@@ -193,24 +198,68 @@ func oneRun(command string, callback CallBack, timeout time.Duration, env []stri
 		opipe = spipe
 	}
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 
 	cmd.Stderr = os.Stderr
-
 	err = cmd.Start()
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 
 	bpipe := bufio.NewReaderSize(opipe, BufferSize)
 
+	chErr := make(chan error, 1) // may from two sources, must be buffered
+	chEndBeforeTimeout := make(chan struct{})
+
+	// detect timeout
+	if timeout > 0 {
+		go func() { // goroutine #T
+			for {
+				select {
+				case <-ctx.Done():
+					chErr <- ErrTimeout
+					ctxCancel()
+					return
+				case <-chEndBeforeTimeout:
+					chErr <- nil
+					return
+				}
+			}
+		}()
+	}
+
+	// handle output
 	var res []byte
-	res, err = bpipe.Peek(BufferSize)
+	var err2 error
+
+	if timeout > 0 {
+		// known shortcoming: this goroutine will remains even after timeout!
+		// this will cause data race.
+		go func() { // goroutine #P
+			// Peek is blocked method, it waits command even after timeout!!
+			res, err2 = bpipe.Peek(BufferSize)
+			chErr <- err2
+		}()
+		err = <-chErr // from timeout #T or peek #P
+	} else {
+		res, err = bpipe.Peek(BufferSize)
+	}
 
 	// less than BufferSize bytes in output...
 	if err == bufio.ErrBufferFull || err == io.EOF {
-		err = cmd.Wait()
+		if timeout > 0 {
+			go func() { // goroutine #W
+				err1 := cmd.Wait()
+				chErr <- err1
+				close(chEndBeforeTimeout)
+			}()
+			err = <-chErr // from timeout #T or normal exit #W
+			<-chErr       // from normal exit #W or timeout #T
+		} else {
+			err = cmd.Wait()
+		}
+
 		if err == nil && callback != nil {
 			if e, ok := <-errch; ok {
 				err = e
@@ -219,7 +268,7 @@ func oneRun(command string, callback CallBack, timeout time.Duration, env []stri
 		return newCommand(bufio.NewReader(bytes.NewReader(res)), nil, command, err)
 	}
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 
 	// more than BufferSize bytes in output. must use tmpfile
@@ -239,7 +288,17 @@ func oneRun(command string, callback CallBack, timeout time.Duration, env []stri
 	btmp.Flush()
 	_, err = tmp.Seek(0, 0)
 	if err == nil {
-		err = cmd.Wait()
+		if timeout > 0 {
+			go func() { // goroutine #W
+				err1 := cmd.Wait()
+				chErr <- err1
+				close(chEndBeforeTimeout)
+			}()
+			err = <-chErr // from timeout #T or normal exit #W
+			<-chErr       // from normal exit #W or timeout #T
+		} else {
+			err = cmd.Wait()
+		}
 	}
 	if err == nil && callback != nil {
 		if e, ok := <-errch; ok {

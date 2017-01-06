@@ -154,7 +154,18 @@ assert_equal $(grep -c "^10$" $STDOUT_FILE) 1
 
 # time out
 fn_check_timeout() {
-	seq 1 | ./gargs_race -t 1 "sleep 5; echo asdf"
+	seq 1 10 | ./gargs_race -t 1 "sleep 2; echo asdf"
 }
-run fn_check_timeout
+run time_out fn_check_timeout
 assert_no_stdout
+assert_in_stderr "time out"
+assert_equal $(cat $STDERR_FILE | grep "time out" | wc -l) 10
+
+# time out 2, timeout > running time
+fn_check_timeout2() {
+	seq 1 10 | ./gargs_race -t 2 "sleep 1; echo asdf"
+}
+run time_out2 fn_check_timeout2
+assert_no_stderr
+assert_in_stdout "asdf"
+assert_equal $(cat $STDOUT_FILE | grep "asdf" | wc -l) 10
