@@ -231,12 +231,11 @@ func oneRun(command string, callback CallBack, timeout time.Duration, env []stri
 
 	// handle output
 	var res []byte
-	var err2 error
 
 	if timeout > 0 {
 		// known shortcoming: this goroutine will remains even after timeout!
-		// this will cause data race.
 		go func() { // goroutine #P
+			var err2 error
 			// Peek is blocked method, it waits command even after timeout!!
 			res, err2 = bpipe.Peek(BufferSize)
 			chErr <- err2
