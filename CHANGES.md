@@ -1,5 +1,5 @@
-0.3.6 (dev)
-===========
+0.3.6
+=====
 + output gargs version in help.
 + restore --ordered (-o) to keep order of output same as input.
   this will cache 3\*proccesses output waiting for the slowest job to finish.
