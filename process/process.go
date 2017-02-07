@@ -3,6 +3,7 @@ package process
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -132,14 +133,14 @@ func Run(command string, opts *Options, env ...string) *Command {
 	var c *Command
 	var retries int
 	if opts == nil {
-		c = oneRun(command, nil, env)
+		c = oneRun(command, nil, 0, env)
 	} else {
-		c = oneRun(command, opts.CallBack, env)
+		c = oneRun(command, opts.CallBack, opts.Timeout, env)
 		retries = opts.Retries
 	}
 	for retries > 0 && c.ExitCode() != 0 {
 		retries--
-		c = oneRun(command, opts.CallBack, env)
+		c = oneRun(command, opts.CallBack, opts.Timeout, env)
 	}
 	c.Duration = time.Since(t)
 	return c
@@ -153,9 +154,22 @@ func oRun(command istring, opts *Options, env ...string) {
 	close(command.ch)
 }
 
-func oneRun(command string, callback CallBack, env []string) *Command {
+// ErrTimeout means timeout
+var ErrTimeout = fmt.Errorf("time out")
 
-	cmd := exec.Command(getShell(), "-c", command)
+func oneRun(command string, callback CallBack, timeout time.Duration, env []string) *Command {
+
+	var cmd *exec.Cmd
+	var ctx context.Context
+	var ctxCancel context.CancelFunc
+	if timeout > 0 {
+		ctx, ctxCancel = context.WithTimeout(context.Background(), timeout)
+		cmd = exec.CommandContext(ctx, getShell(), "-c", command)
+		defer ctxCancel()
+	} else {
+		cmd = exec.Command(getShell(), "-c", command)
+	}
+
 	if len(env) > 0 {
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, env...)
@@ -164,7 +178,7 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 
 	spipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 	defer spipe.Close()
 	var errch chan error
@@ -184,24 +198,67 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 		opipe = spipe
 	}
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 
 	cmd.Stderr = os.Stderr
-
 	err = cmd.Start()
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 
 	bpipe := bufio.NewReaderSize(opipe, BufferSize)
 
+	chErr := make(chan error, 1) // may from two sources, must be buffered
+	chEndBeforeTimeout := make(chan struct{})
+
+	// detect timeout
+	if timeout > 0 {
+		go func() { // goroutine #T
+			for {
+				select {
+				case <-ctx.Done():
+					chErr <- ErrTimeout
+					ctxCancel()
+					return
+				case <-chEndBeforeTimeout:
+					chErr <- nil
+					return
+				}
+			}
+		}()
+	}
+
+	// handle output
 	var res []byte
-	res, err = bpipe.Peek(BufferSize)
+
+	if timeout > 0 {
+		// known shortcoming: this goroutine will remains even after timeout!
+		go func() { // goroutine #P
+			var err2 error
+			// Peek is blocked method, it waits command even after timeout!!
+			res, err2 = bpipe.Peek(BufferSize)
+			chErr <- err2
+		}()
+		err = <-chErr // from timeout #T or peek #P
+	} else {
+		res, err = bpipe.Peek(BufferSize)
+	}
 
 	// less than BufferSize bytes in output...
 	if err == bufio.ErrBufferFull || err == io.EOF {
-		err = cmd.Wait()
+		if timeout > 0 {
+			go func() { // goroutine #W
+				err1 := cmd.Wait()
+				chErr <- err1
+				close(chEndBeforeTimeout)
+			}()
+			err = <-chErr // from timeout #T or normal exit #W
+			<-chErr       // from normal exit #W or timeout #T
+		} else {
+			err = cmd.Wait()
+		}
+
 		if err == nil && callback != nil {
 			if e, ok := <-errch; ok {
 				err = e
@@ -210,7 +267,7 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 		return newCommand(bufio.NewReader(bytes.NewReader(res)), nil, command, err)
 	}
 	if err != nil {
-		return newCommand(nil, nil, command, err)
+		return newCommand(bufio.NewReader(bytes.NewReader([]byte{})), nil, command, err)
 	}
 
 	// more than BufferSize bytes in output. must use tmpfile
@@ -230,7 +287,17 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 	btmp.Flush()
 	_, err = tmp.Seek(0, 0)
 	if err == nil {
-		err = cmd.Wait()
+		if timeout > 0 {
+			go func() { // goroutine #W
+				err1 := cmd.Wait()
+				chErr <- err1
+				close(chEndBeforeTimeout)
+			}()
+			err = <-chErr // from timeout #T or normal exit #W
+			<-chErr       // from normal exit #W or timeout #T
+		} else {
+			err = cmd.Wait()
+		}
 	}
 	if err == nil && callback != nil {
 		if e, ok := <-errch; ok {
@@ -283,6 +350,8 @@ type Options struct {
 	// Retries indicates the number of times a process will be retried if it has
 	// a non-zero exit code.
 	Retries int
+	// Timeout indicates the longest running time of a process.
+	Timeout time.Duration
 }
 
 // Runner accepts commands from a channel and sends a bufio.Reader on the returned channel.
