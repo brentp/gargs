@@ -1,3 +1,8 @@
+0.3.7
+=====
++ compress temporary files with gzip (BestSpeed)
++ default to bash instead of sh if it exists and SHELL is not specified
+
 0.3.6
 =====
 + output gargs version in help.

@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current version
-const Version = "0.3.6"
+const Version = "0.3.7"
 
 // ExitCode is the highest exit code seen in any command
 var ExitCode = 0

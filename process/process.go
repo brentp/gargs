@@ -3,6 +3,7 @@ package process
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,7 +32,11 @@ var prefix = fmt.Sprintf("gargs.%d.", os.Getpid())
 func getShell() string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
-		shell = "sh"
+		if _, err := os.Stat("/bin/bash"); err == nil {
+			shell = "bash"
+		} else {
+			shell = "sh"
+		}
 	}
 	return shell
 }
@@ -219,15 +224,21 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 	if err != nil {
 		return newCommand(bufio.NewReader(bytes.NewReader(res)), tmp, command, err)
 	}
-	btmp := bufio.NewWriter(tmp)
-	_, err = io.CopyBuffer(btmp, bpipe, res)
+
+	gtmp, err := gzip.NewWriterLevel(tmp, gzip.BestSpeed)
+	if err != nil {
+		return newCommand(bufio.NewReader(bytes.NewReader(res)), tmp, command, err)
+	}
+
+	_, err = io.CopyBuffer(gtmp, bpipe, res)
 	if err != nil {
 		return newCommand(bufio.NewReader(bytes.NewReader(res)), tmp, command, err)
 	}
 	if c, ok := opipe.(io.ReadCloser); ok {
 		c.Close()
 	}
-	btmp.Flush()
+	gtmp.Flush()
+	gtmp.Close()
 	_, err = tmp.Seek(0, 0)
 	if err == nil {
 		err = cmd.Wait()
@@ -237,7 +248,9 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 			err = e
 		}
 	}
-	return newCommand(bufio.NewReader(tmp), tmp, command, err)
+	var grdr *gzip.Reader
+	grdr, err = gzip.NewReader(tmp)
+	return newCommand(bufio.NewReader(grdr), tmp, command, err)
 }
 
 // istring holds a command and an index.
