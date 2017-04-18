@@ -1,3 +1,7 @@
+0.3.8
+=====
++ report time in log output
+
 0.3.7
 =====
 + compress temporary files with gzip (BestSpeed)
