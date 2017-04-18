@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current version
-const Version = "0.3.7"
+const Version = "0.3.8"
 
 // ExitCode is the highest exit code seen in any command
 var ExitCode = 0
@@ -224,10 +224,11 @@ func run(args Params) {
 		}
 		if args.log != nil {
 			// if no error prefix the command with '#'
+			rtime := fmt.Sprintf(" #\t%.0fs\n", p.Duration.Seconds())
 			if p.ExitCode() == 0 {
-				args.log.WriteString("# " + strings.Replace(p.CmdStr, "\n", "\n# ", -1) + "\n")
+				args.log.WriteString("# " + strings.Replace(p.CmdStr, "\n", "\n# ", -1) + rtime)
 			} else {
-				args.log.WriteString(p.CmdStr + "\n")
+				args.log.WriteString(p.CmdStr + rtime)
 			}
 			stdout.Flush()
 		}

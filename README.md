@@ -1,7 +1,7 @@
 <!--
 rm -rf binaries
 mkdir -p binaries/
-VERSION=0.3.3
+VERSION=0.3.8
 for os in darwin linux windows; do
 	GOOS=$os GOARCH=$arch go build -o binaries/gargs_${os} main.go
 done
@@ -131,7 +131,7 @@ Usage
 
 via `gargs -h`
 ```
-gargs 0.3.6
+gargs 0.3.8
 usage: gargs [--procs PROCS] [--sep SEP] [--nlines NLINES] [--retry RETRY] [--ordered] [--verbose] [--stop-on-error] [--dry-run] [--log LOG] COMMAND
 
 positional arguments:
