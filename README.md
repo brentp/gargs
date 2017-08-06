@@ -17,6 +17,7 @@ gargs
 + easy to specify multiple arguments with number blocks ({0}, {1}, ...) and {} indicates the entire line.
 + easy to use multiple lines to fill command-template.
 + easy to --retry each command if it fails (e.g. due to network or other intermittent error)
++ simple implementation
 + allows exiting all commands when an error in one of them occurs.
 + optionally logs all commands with successful commands prefixed by '#' so it's easy to find failed commands.
 + simple implementation.
@@ -24,7 +25,7 @@ gargs
 + allows keeping output in order of input even when proceses finish out of order (via -o flag)
 
 
-An very simple example usage with 3 processes to echo some numbers:
+A very simple example usage with 3 processes to echo some numbers:
 
 ```
 $ seq 3 | gargs --log my.log -p 3 "echo {0}"
@@ -33,7 +34,7 @@ $ seq 3 | gargs --log my.log -p 3 "echo {0}"
 3
 ```
 
-my.log will contain the commands run and a final line '# SUCCESS' that shows all processes finished
+`my.log` will contain the commands run and a final line '# SUCCESS' that shows all processes finished
 without error. This makes it easy to check if all commands ran without catching the exit code of the command.
 
 Install
@@ -70,7 +71,7 @@ The default value is 4.
 Implementation
 ==============
 
-`gargs` will span a worker goroutine for each core requested via `-p`. It will attempt
+`gargs` will spawn a worker goroutine for each core requested via `-p`. It will attempt
 to read up to 1MB (settable by `GARGS_PROCESS_BUFFER` env variable) of output from each proceses
 into memory. If it reaches an EOF (they end of the output from the process) within that 1MB,
 then it will write that to stdout. If not, it will write to a temporary file keep memory usage:
