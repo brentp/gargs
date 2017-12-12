@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current version
-const Version = "0.3.8"
+const Version = "0.3.9"
 
 // ExitCode is the highest exit code seen in any command
 var ExitCode = 0
@@ -214,8 +214,11 @@ func run(args Params) {
 		if args.Verbose {
 			fmt.Fprintf(os.Stderr, "%s\n", p)
 		}
-		_, err := io.Copy(stdout, p)
-		check(err)
+		// reader can be nil if we couldn't even start the bash process
+		if p.Reader != nil {
+			_, err := io.Copy(stdout, p)
+			check(err)
+		}
 
 		p.Cleanup()
 		if t := time.Now(); t.After(last) {

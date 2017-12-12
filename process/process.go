@@ -71,12 +71,18 @@ func (c *Command) String() string {
 	if len(c.CmdStr) > 100 {
 		cmd = cmd[:80] + "..."
 	}
-	out, _ := c.Peek(20)
-	prompt := ", stdout[:20]: "
-	if len(out) < 20 {
-		prompt = "stdout: "
+	var prompt string
+	if c.Reader != nil {
+		out, _ := c.Peek(20)
+		prompt = ", stdout[:20]: "
+		if len(out) < 20 {
+			prompt = "stdout: "
+		}
+		prompt += fmt.Sprintf("'%s'", strings.Replace(string(out), "\n", "\\n", -1))
+	} else {
+		prompt = ", [no stdout]"
+
 	}
-	prompt += fmt.Sprintf("'%s'", strings.Replace(string(out), "\n", "\\n", -1))
 	errString := ""
 	if e := c.error(); e != "" {
 		errString = fmt.Sprintf(", error: %s", e)

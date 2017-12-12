@@ -1,3 +1,7 @@
+0.3.9
+=====
++ fix panic whan bash process never started (e.g. because of 'argument list too long')
+
 0.3.8
 =====
 + report time in log output
