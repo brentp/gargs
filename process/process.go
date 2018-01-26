@@ -171,6 +171,9 @@ func oneRun(command string, callback CallBack, env []string) *Command {
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, env...)
 	}
+	// kill child process with parent dies
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGABRT}
+
 	var opipe io.Reader
 
 	spipe, err := cmd.StdoutPipe()
